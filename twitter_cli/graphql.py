@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from typing import Any, Dict, Optional  # noqa: F401
 
 from .exceptions import QueryIdError
+from .text import CREATE_NOTE_TWEET_OPERATION, CREATE_TWEET_OPERATION
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,8 @@ FALLBACK_QUERY_IDS = {
     "ListLatestTweetsTimeline": "FVWmROVvhgjRPC-4jAUh8A",
     "Followers": "_orfRBQae57vylFPH0Huhg",
     "Following": "F42cDX8PDFxkbjjq6JrM2w",
-    "CreateTweet": "5CdvsV_zjv4L64XFifAglw",
+    CREATE_TWEET_OPERATION: "5CdvsV_zjv4L64XFifAglw",
+    CREATE_NOTE_TWEET_OPERATION: "dAlh5Gh9rR5pKk4HU4vW8g",
     "DeleteTweet": "VaenaVgh5q5ih7kvyVjgtg",
     "FavoriteTweet": "lI07N6Otwv1PhnEgXILM7A",
     "UnfavoriteTweet": "ZYKSe-w7KEslx3JhSIk5LA",
@@ -82,9 +84,26 @@ _DEFAULT_FEATURES = {
 # Features dict that gets updated dynamically from x.com JS bundles
 FEATURES = dict(_DEFAULT_FEATURES)
 
+# Extra composer flags belong only on CreateNoteTweet. Merging at call time
+# preserves any live updates made to the shared base feature set.
+NOTE_TWEET_FEATURES = {
+    "longform_notetweets_creation_enabled": True,
+    "longform_notetweets_richtext_consumption_enabled": True,
+    "articles_preview_enabled": True,
+    "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
+}
+
 # Module-level caches (not thread-safe — CLI is single-threaded)
 _cached_query_ids: Dict[str, str] = {}
 _bundles_scanned = False
+
+
+def operation_features(operation_name):
+    # type: (str) -> Dict[str, Any]
+    """Return base features plus overrides scoped to one operation."""
+    if operation_name == CREATE_NOTE_TWEET_OPERATION:
+        return dict(FEATURES, **NOTE_TWEET_FEATURES)
+    return FEATURES
 
 
 def _build_graphql_url(query_id, operation_name, variables, features, field_toggles=None):
