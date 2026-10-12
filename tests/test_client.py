@@ -208,12 +208,12 @@ class TestBuildGraphqlUrl:
 
     def test_searchtimeline_fallback_query_id_regression(self):
         """Keep SearchTimeline fallback aligned with the live operation after issue #39."""
-        assert FALLBACK_QUERY_IDS["SearchTimeline"] == "VhUd6vHVmLBcw0uX-6jMLA"
+        assert FALLBACK_QUERY_IDS["SearchTimeline"] == "Yw6L66Pw54NHKuq4Dp7b4Q"
 
     def test_home_timeline_fallback_query_ids(self):
         """Keep home timeline fallbacks aligned with the current web bundle."""
-        assert FALLBACK_QUERY_IDS["HomeTimeline"] == "3b9_7tltt0hJRef-xm_3sw"
-        assert FALLBACK_QUERY_IDS["HomeLatestTimeline"] == "m1G65W9TS1-g-AllrKKYDQ"
+        assert FALLBACK_QUERY_IDS["HomeTimeline"] == "7zlnp2TxC044W4C1ZUJMHw"
+        assert FALLBACK_QUERY_IDS["HomeLatestTimeline"] == "0dateTVgvXjpkf7kyBZy0g"
 
 
 class TestStaleQueryRetry:
