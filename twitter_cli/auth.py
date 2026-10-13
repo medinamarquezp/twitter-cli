@@ -619,16 +619,4 @@ def get_cookies() -> Dict[str, str]:
         lines.append("Run 'twitter -v <command>' for debug diagnostics.")
         raise AuthenticationError("\n".join(lines))
 
-    # Verify only for explicit auth failures; transient endpoint issues are tolerated.
-    try:
-        verify_cookies(cookies["auth_token"], cookies["ct0"], cookies.get("cookie_string"))
-    except RuntimeError:
-        # Auth failure — re-extract from browser and retry verification
-        logger.info("Cookie verification failed, re-extracting from browser")
-        fresh_cookies, _ = extract_from_browser()
-        if fresh_cookies:
-            # Verify fresh cookies — if this also fails, let it raise
-            verify_cookies(fresh_cookies["auth_token"], fresh_cookies["ct0"], fresh_cookies.get("cookie_string"))
-            return fresh_cookies
-        raise
     return cookies

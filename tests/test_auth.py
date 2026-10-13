@@ -10,49 +10,31 @@ import pytest
 from twitter_cli import auth
 
 
-def test_get_cookies_prefers_env(monkeypatch) -> None:
+def test_get_cookies_prefers_env_without_network_check(monkeypatch) -> None:
     monkeypatch.setattr(auth, "load_from_env", lambda: {"auth_token": "env-token", "ct0": "env-csrf"})
     monkeypatch.setattr(auth, "extract_from_browser", lambda: pytest.fail("should not extract from browser"))
-    seen = []
-    monkeypatch.setattr(
-        auth,
-        "verify_cookies",
-        lambda auth_token, ct0, cookie_string=None: seen.append((auth_token, ct0, cookie_string)) or {},
-    )
+    monkeypatch.setattr(auth, "verify_cookies", lambda *args, **kwargs: pytest.fail("should not verify on startup"))
 
     cookies = auth.get_cookies()
 
     assert cookies == {"auth_token": "env-token", "ct0": "env-csrf"}
-    assert seen == [("env-token", "env-csrf", None)]
 
 
-def test_get_cookies_reextracts_after_verify_failure(monkeypatch) -> None:
+def test_get_cookies_extracts_browser_cookies_once_without_network_check(monkeypatch) -> None:
     monkeypatch.setattr(auth, "load_from_env", lambda: None)
-    extracted = iter(
-        [
-            ({"auth_token": "stale-token", "ct0": "stale-csrf", "cookie_string": "stale=1"}, []),
-            ({"auth_token": "fresh-token", "ct0": "fresh-csrf", "cookie_string": "fresh=1"}, []),
-        ]
-    )
-    monkeypatch.setattr(auth, "extract_from_browser", lambda: next(extracted))
+    extracted = []
 
-    calls = []
+    def _extract():
+        extracted.append(True)
+        return {"auth_token": "browser-token", "ct0": "browser-csrf", "cookie_string": "a=1"}, []
 
-    def _verify(auth_token, ct0, cookie_string=None):
-        calls.append((auth_token, ct0, cookie_string))
-        if auth_token == "stale-token":
-            raise RuntimeError("expired")
-        return {}
-
-    monkeypatch.setattr(auth, "verify_cookies", _verify)
+    monkeypatch.setattr(auth, "extract_from_browser", _extract)
+    monkeypatch.setattr(auth, "verify_cookies", lambda *args, **kwargs: pytest.fail("should not verify on startup"))
 
     cookies = auth.get_cookies()
 
-    assert cookies["auth_token"] == "fresh-token"
-    assert calls == [
-        ("stale-token", "stale-csrf", "stale=1"),
-        ("fresh-token", "fresh-csrf", "fresh=1"),
-    ]
+    assert cookies["auth_token"] == "browser-token"
+    assert extracted == [True]
 
 
 def test_load_from_env_logs_incomplete_env(monkeypatch, caplog) -> None:
