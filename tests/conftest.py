@@ -7,9 +7,26 @@ from typing import Any
 
 import pytest
 
+from twitter_cli import cache, graphql
+from twitter_cli.client import TwitterClient
 from twitter_cli.models import Author, Metrics, Tweet
 
 os.environ.setdefault("OUTPUT", "rich")
+
+
+@pytest.fixture(autouse=True)
+def isolated_state_dir(tmp_path, monkeypatch) -> Path:
+    state_dir = tmp_path / "state"
+    monkeypatch.setattr(cache, "_CACHE_DIR", state_dir)
+    monkeypatch.setattr(cache, "_CACHE_FILE", state_dir / "last_results.json")
+    monkeypatch.setattr(graphql, "QUERY_ID_CACHE_FILE", state_dir / "query_ids.json")
+    monkeypatch.setattr(graphql, "_persisted_query_ids", None)
+    monkeypatch.setattr(
+        TwitterClient,
+        "_ct_cache_path",
+        staticmethod(lambda: str(state_dir / "transaction_cache.json")),
+    )
+    return state_dir
 
 
 @pytest.fixture()

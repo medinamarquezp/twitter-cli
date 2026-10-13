@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import urllib.parse
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     from typing import Any, Dict, Optional  # noqa: F401
 
 from .exceptions import QueryIdError
+from .private_files import STATE_DIR, write_private_text
 from .text import CREATE_NOTE_TWEET_OPERATION, CREATE_TWEET_OPERATION
 
 logger = logging.getLogger(__name__)
@@ -96,6 +98,50 @@ NOTE_TWEET_FEATURES = {
 # Module-level caches (not thread-safe — CLI is single-threaded)
 _cached_query_ids: Dict[str, str] = {}
 _bundles_scanned = False
+
+QUERY_ID_CACHE_FILE = STATE_DIR / "query_ids.json"
+QUERY_ID_CACHE_TTL = 30 * 24 * 3600
+_persisted_query_ids: Optional[Dict[str, Dict[str, Any]]] = None
+
+
+def _load_persisted_query_ids() -> Dict[str, Dict[str, Any]]:
+    global _persisted_query_ids
+    if _persisted_query_ids is not None:
+        return _persisted_query_ids
+    _persisted_query_ids = {}
+    try:
+        payload = json.loads(QUERY_ID_CACHE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return _persisted_query_ids
+    if not isinstance(payload, dict):
+        return _persisted_query_ids
+    now = time.time()
+    for operation_name, entry in payload.items():
+        if not isinstance(entry, dict):
+            continue
+        query_id = entry.get("queryId")
+        resolved_at = entry.get("resolvedAt")
+        if not isinstance(query_id, str) or not query_id:
+            continue
+        if not isinstance(resolved_at, (int, float)) or now - resolved_at > QUERY_ID_CACHE_TTL:
+            continue
+        _persisted_query_ids[operation_name] = {"queryId": query_id, "resolvedAt": resolved_at}
+    return _persisted_query_ids
+
+
+def _write_persisted_query_ids(entries: Dict[str, Dict[str, Any]]) -> None:
+    try:
+        write_private_text(QUERY_ID_CACHE_FILE, json.dumps(entries, sort_keys=True))
+    except OSError as exc:
+        logger.debug("Failed to persist query IDs: %s", exc)
+
+
+def _remember_live_query_id(operation_name: str, query_id: str) -> str:
+    _cached_query_ids[operation_name] = query_id
+    entries = _load_persisted_query_ids()
+    entries[operation_name] = {"queryId": query_id, "resolvedAt": time.time()}
+    _write_persisted_query_ids(entries)
+    return query_id
 
 
 def operation_features(operation_name):
@@ -240,6 +286,9 @@ def _invalidate_query_id(operation_name):
     # type: (str) -> None
     """Remove a cached queryId for an operation."""
     _cached_query_ids.pop(operation_name, None)
+    entries = _load_persisted_query_ids()
+    if entries.pop(operation_name, None) is not None:
+        _write_persisted_query_ids(entries)
 
 
 def _resolve_query_id(operation_name, prefer_fallback=True, url_fetch_fn=None):
@@ -249,6 +298,11 @@ def _resolve_query_id(operation_name, prefer_fallback=True, url_fetch_fn=None):
     if cached:
         return cached
 
+    persisted = _load_persisted_query_ids().get(operation_name)
+    if persisted:
+        _cached_query_ids[operation_name] = persisted["queryId"]
+        return persisted["queryId"]
+
     fallback = FALLBACK_QUERY_IDS.get(operation_name)
     if prefer_fallback and fallback:
         _cached_query_ids[operation_name] = fallback
@@ -257,13 +311,12 @@ def _resolve_query_id(operation_name, prefer_fallback=True, url_fetch_fn=None):
     if url_fetch_fn:
         github_query_id = _fetch_from_github(url_fetch_fn, operation_name)
         if github_query_id:
-            _cached_query_ids[operation_name] = github_query_id
-            return github_query_id
+            return _remember_live_query_id(operation_name, github_query_id)
 
         _scan_bundles(url_fetch_fn)
         cached = _cached_query_ids.get(operation_name)
         if cached:
-            return cached
+            return _remember_live_query_id(operation_name, cached)
 
     if fallback:
         _cached_query_ids[operation_name] = fallback

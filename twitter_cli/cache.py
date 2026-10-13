@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import time
-from pathlib import Path
 from typing import List, Optional, Tuple
 
 from .models import Tweet
+from .private_files import STATE_DIR, write_private_text
 
 logger = logging.getLogger(__name__)
 
-_CACHE_DIR = Path.home() / ".twitter-cli"
+_CACHE_DIR = STATE_DIR
 _CACHE_FILE = _CACHE_DIR / "last_results.json"
 _TTL = 3600  # seconds
 
@@ -20,14 +20,13 @@ _TTL = 3600  # seconds
 def save_tweet_cache(tweets: List[Tweet]) -> None:
     """Persist tweet list so indices can be resolved by `show`."""
     try:
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         entries = [
             {"index": i + 1, "id": t.id, "author": t.author.screen_name, "text": t.text[:80]}
             for i, t in enumerate(tweets)
             if t.id
         ]
         payload = {"created_at": time.time(), "tweets": entries}
-        _CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_private_text(_CACHE_FILE, json.dumps(payload, ensure_ascii=False, indent=2))
     except OSError as exc:
         logger.debug("Failed to write tweet cache: %s", exc)
 

@@ -11,6 +11,7 @@ import os
 import random
 import time
 import urllib.parse
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 import bs4
@@ -40,7 +41,6 @@ from .exceptions import (
     TwitterAPIError,
 )
 from .graphql import (
-    FALLBACK_QUERY_IDS,
     FEATURES,
     _build_graphql_url,
     _invalidate_query_id,
@@ -56,6 +56,7 @@ from .parser import (
     parse_tweet_result,
     parse_user_result,
 )
+from .private_files import STATE_DIR, write_private_text
 from .text import CREATE_NOTE_TWEET_OPERATION, tweet_create_route
 
 if TYPE_CHECKING:
@@ -960,7 +961,6 @@ class TwitterClient:
         # type: (str, Dict[str, Any], Dict[str, Any], Optional[Dict[str, Any]]) -> Dict[str, Any]
         """Issue GraphQL GET request with automatic stale-fallback retry."""
         query_id = _resolve_query_id(operation_name, prefer_fallback=True, url_fetch_fn=_url_fetch)
-        using_fallback = query_id == FALLBACK_QUERY_IDS.get(operation_name)
         url = _build_graphql_url(query_id, operation_name, variables, features, field_toggles)
 
         try:
@@ -968,19 +968,19 @@ class TwitterClient:
         except TwitterAPIError as exc:
             # Stale IDs may be reported as HTTP 404/422 or as a GraphQL
             # "Query: Unspecified" error inside an otherwise successful response.
-            if _is_stale_query_error(exc) and using_fallback:
-                logger.info("Retrying %s with live queryId after stale-query response", operation_name)
+            if _is_stale_query_error(exc):
                 _invalidate_query_id(operation_name)
                 refreshed_query_id = _resolve_query_id(operation_name, prefer_fallback=False, url_fetch_fn=_url_fetch)
-                retry_url = _build_graphql_url(refreshed_query_id, operation_name, variables, features, field_toggles)
-                return self._api_get(retry_url)
+                if refreshed_query_id != query_id:
+                    logger.info("Retrying %s with live queryId after stale-query response", operation_name)
+                    retry_url = _build_graphql_url(refreshed_query_id, operation_name, variables, features, field_toggles)
+                    return self._api_get(retry_url)
             raise
 
     def _graphql_post(self, operation_name, variables, features=None):
         # type: (str, Dict[str, Any], Optional[Dict[str, Any]]) -> Dict[str, Any]
         """Issue GraphQL POST request with automatic stale-fallback retry."""
         query_id = _resolve_query_id(operation_name, prefer_fallback=True, url_fetch_fn=_url_fetch)
-        using_fallback = query_id == FALLBACK_QUERY_IDS.get(operation_name)
 
         def _do_post(qid):
             # type: (str) -> Dict[str, Any]
@@ -993,11 +993,12 @@ class TwitterClient:
         try:
             return _do_post(query_id)
         except TwitterAPIError as exc:
-            if _is_stale_query_error(exc) and using_fallback:
-                logger.info("Retrying POST %s with live queryId after stale-query response", operation_name)
+            if _is_stale_query_error(exc):
                 _invalidate_query_id(operation_name)
                 refreshed = _resolve_query_id(operation_name, prefer_fallback=False, url_fetch_fn=_url_fetch)
-                return _do_post(refreshed)
+                if refreshed != query_id:
+                    logger.info("Retrying POST %s with live queryId after stale-query response", operation_name)
+                    return _do_post(refreshed)
             raise
 
     # ── Internal: HTTP request engine ────────────────────────────────
@@ -1094,8 +1095,7 @@ class TwitterClient:
     def _ct_cache_path():
         # type: () -> str
         """Return path for transaction cache file."""
-        home = os.path.expanduser("~")
-        return os.path.join(home, ".twitter-cli", "transaction_cache.json")
+        return str(STATE_DIR / "transaction_cache.json")
 
     def _load_ct_cache(self):
         # type: () -> bool
@@ -1130,15 +1130,12 @@ class TwitterClient:
         """Save transaction data to cache file."""
         try:
             cache_path = self._ct_cache_path()
-            cache_dir = os.path.dirname(cache_path)
-            os.makedirs(cache_dir, exist_ok=True)
             cache = {
                 "home_html": home_html,
                 "ondemand_text": ondemand_text,
                 "created_at": time.time(),
             }
-            with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump(cache, f)
+            write_private_text(Path(cache_path), json.dumps(cache))
             logger.debug("Saved CT cache to %s", cache_path)
         except Exception as exc:
             logger.debug("Failed to save CT cache: %s", exc)
