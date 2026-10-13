@@ -465,6 +465,8 @@ def parse_tweet_result(result, depth=0):
 
     # Prefer note_tweet full text for long tweets ("Show More")
     note_text = _deep_get(actual_data, "note_tweet", "note_tweet_results", "result", "text")
+    note_entities = _deep_get(actual_data, "note_tweet", "note_tweet_results", "result", "entity_set")
+    entities = note_entities if isinstance(note_entities, dict) else actual_legacy.get("entities") or {}
 
     return Tweet(
         id=actual_data.get("rest_id", ""),
@@ -486,6 +488,20 @@ def parse_tweet_result(result, depth=0):
         quoted_tweet=quoted_tweet,
         lang=actual_legacy.get("lang", ""),
         is_subscriber_only=(is_subscriber_only or retweet_subscriber_only) if is_retweet else is_subscriber_only,
+        in_reply_to_id=actual_legacy.get("in_reply_to_status_id_str") or None,
+        in_reply_to_user=actual_legacy.get("in_reply_to_screen_name") or None,
+        conversation_id=actual_legacy.get("conversation_id_str") or None,
+        mentions=[
+            item["screen_name"]
+            for item in entities.get("user_mentions") or []
+            if isinstance(item, dict) and item.get("screen_name")
+        ],
+        hashtags=[
+            item["text"]
+            for item in entities.get("hashtags") or []
+            if isinstance(item, dict) and item.get("text")
+        ],
+        retweeted_at=(legacy.get("created_at") or None) if is_retweet else None,
         **_parse_article(actual_data),
     )
 

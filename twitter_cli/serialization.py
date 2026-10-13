@@ -23,14 +23,7 @@ def tweet_to_dict(tweet: Tweet) -> Dict[str, Any]:
             "followers": tweet.author.followers_count,
             "following": tweet.author.following_count,
         },
-        "metrics": {
-            "likes": tweet.metrics.likes,
-            "retweets": tweet.metrics.retweets,
-            "replies": tweet.metrics.replies,
-            "quotes": tweet.metrics.quotes,
-            "views": tweet.metrics.views,
-            "bookmarks": tweet.metrics.bookmarks,
-        },
+        "metrics": _metrics_to_dict(tweet.metrics),
         "createdAt": tweet.created_at,
         "createdAtLocal": format_local_time(tweet.created_at),
         "createdAtISO": format_iso8601(tweet.created_at),
@@ -44,8 +37,15 @@ def tweet_to_dict(tweet: Tweet) -> Dict[str, Any]:
             for media in tweet.media
         ],
         "urls": list(tweet.urls),
+        "mentions": list(tweet.mentions),
+        "hashtags": list(tweet.hashtags),
         "isRetweet": tweet.is_retweet,
         "retweetedBy": tweet.retweeted_by,
+        "retweetedAt": tweet.retweeted_at,
+        "retweetedAtISO": format_iso8601(tweet.retweeted_at) if tweet.retweeted_at else None,
+        "inReplyToId": tweet.in_reply_to_id,
+        "inReplyToUser": tweet.in_reply_to_user,
+        "conversationId": tweet.conversation_id,
         "lang": tweet.lang,
         "score": tweet.score,
         "isSubscriberOnly": tweet.is_subscriber_only,
@@ -60,11 +60,37 @@ def tweet_to_dict(tweet: Tweet) -> Dict[str, Any]:
             "id": tweet.quoted_tweet.id,
             "text": tweet.quoted_tweet.text,
             "author": {
+                "id": tweet.quoted_tweet.author.id,
                 "screenName": tweet.quoted_tweet.author.screen_name,
                 "name": tweet.quoted_tweet.author.name,
             },
+            "metrics": _metrics_to_dict(tweet.quoted_tweet.metrics),
+            "createdAt": tweet.quoted_tweet.created_at,
+            "createdAtISO": format_iso8601(tweet.quoted_tweet.created_at),
         }
     return data
+
+
+def _metrics_to_dict(metrics: Metrics) -> Dict[str, int]:
+    return {
+        "likes": metrics.likes,
+        "retweets": metrics.retweets,
+        "replies": metrics.replies,
+        "quotes": metrics.quotes,
+        "views": metrics.views,
+        "bookmarks": metrics.bookmarks,
+    }
+
+
+def _metrics_from_dict(data: Dict[str, Any]) -> Metrics:
+    return Metrics(
+        likes=int(data.get("likes") or 0),
+        retweets=int(data.get("retweets") or 0),
+        replies=int(data.get("replies") or 0),
+        quotes=int(data.get("quotes") or 0),
+        views=int(data.get("views") or 0),
+        bookmarks=int(data.get("bookmarks") or 0),
+    )
 
 
 def tweet_from_dict(data: Dict[str, Any]) -> Tweet:
@@ -81,12 +107,12 @@ def tweet_from_dict(data: Dict[str, Any]) -> Tweet:
             id=str(quoted_data.get("id") or ""),
             text=str(quoted_data.get("text") or ""),
             author=Author(
-                id="",
+                id=str(quoted_author.get("id") or ""),
                 name=str(quoted_author.get("name") or ""),
                 screen_name=str(quoted_author.get("screenName") or ""),
             ),
-            metrics=Metrics(),
-            created_at="",
+            metrics=_metrics_from_dict(quoted_data.get("metrics") or {}),
+            created_at=str(quoted_data.get("createdAt") or ""),
         )
 
     return Tweet(
@@ -99,14 +125,7 @@ def tweet_from_dict(data: Dict[str, Any]) -> Tweet:
             profile_image_url=str(author_data.get("profileImageUrl") or ""),
             verified=bool(author_data.get("verified", False)),
         ),
-        metrics=Metrics(
-            likes=int(metrics_data.get("likes") or 0),
-            retweets=int(metrics_data.get("retweets") or 0),
-            replies=int(metrics_data.get("replies") or 0),
-            quotes=int(metrics_data.get("quotes") or 0),
-            views=int(metrics_data.get("views") or 0),
-            bookmarks=int(metrics_data.get("bookmarks") or 0),
-        ),
+        metrics=_metrics_from_dict(metrics_data),
         created_at=str(data.get("createdAt") or ""),
         media=[
             TweetMedia(
@@ -128,6 +147,12 @@ def tweet_from_dict(data: Dict[str, Any]) -> Tweet:
         article_text=_optional_str(data.get("articleText")),
         is_subscriber_only=bool(data.get("isSubscriberOnly", False)),
         is_promoted=bool(data.get("isPromoted", False)),
+        in_reply_to_id=_optional_str(data.get("inReplyToId")),
+        in_reply_to_user=_optional_str(data.get("inReplyToUser")),
+        conversation_id=_optional_str(data.get("conversationId")),
+        mentions=[str(item) for item in (data.get("mentions") or [])],
+        hashtags=[str(item) for item in (data.get("hashtags") or [])],
+        retweeted_at=_optional_str(data.get("retweetedAt")),
     )
 
 
