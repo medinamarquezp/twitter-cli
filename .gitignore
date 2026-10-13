@@ -7,5 +7,6 @@ build/
 .env
 *.json
 !tests/fixtures/*.json
+!schema/*.json
 !config.yaml
 .idea/

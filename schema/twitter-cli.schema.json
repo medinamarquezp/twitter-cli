@@ -1,0 +1,490 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/medinamarquezp/twitter-cli/blob/integration/schema/twitter-cli.schema.json",
+  "title": "twitter-cli structured output",
+  "description": "Envelopes and data shapes printed with --json or --yaml (schema_version 1). SCHEMA.md maps every command to its envelope.",
+  "$defs": {
+    "IdString": {
+      "type": "string"
+    },
+    "Count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "Pagination": {
+      "type": "object",
+      "properties": {
+        "nextCursor": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["nextCursor"],
+      "additionalProperties": false
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "enum": [
+            "not_authenticated",
+            "rate_limited",
+            "not_found",
+            "network_error",
+            "query_id_error",
+            "media_upload_error",
+            "invalid_input",
+            "api_error"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "object"
+        }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    },
+    "ErrorEnvelope": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "schema_version": {
+          "const": "1"
+        },
+        "error": {
+          "$ref": "#/$defs/Error"
+        }
+      },
+      "required": ["ok", "schema_version", "error"],
+      "additionalProperties": false
+    },
+    "Metrics": {
+      "type": "object",
+      "properties": {
+        "likes": { "$ref": "#/$defs/Count" },
+        "retweets": { "$ref": "#/$defs/Count" },
+        "replies": { "$ref": "#/$defs/Count" },
+        "quotes": { "$ref": "#/$defs/Count" },
+        "views": { "$ref": "#/$defs/Count" },
+        "bookmarks": { "$ref": "#/$defs/Count" }
+      },
+      "required": ["likes", "retweets", "replies", "quotes", "views", "bookmarks"],
+      "additionalProperties": false
+    },
+    "Author": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/IdString" },
+        "name": { "type": "string" },
+        "screenName": { "type": "string" },
+        "profileImageUrl": { "type": "string" },
+        "verified": { "type": "boolean" },
+        "followers": { "$ref": "#/$defs/Count" },
+        "following": { "$ref": "#/$defs/Count" }
+      },
+      "required": ["id", "name", "screenName", "profileImageUrl", "verified", "followers", "following"],
+      "additionalProperties": false
+    },
+    "Media": {
+      "type": "object",
+      "properties": {
+        "type": { "enum": ["photo", "video", "animated_gif"] },
+        "url": { "type": "string" },
+        "width": { "type": ["integer", "null"] },
+        "height": { "type": ["integer", "null"] }
+      },
+      "required": ["type", "url", "width", "height"],
+      "additionalProperties": false
+    },
+    "QuotedTweet": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/IdString" },
+        "text": { "type": "string" },
+        "author": {
+          "type": "object",
+          "properties": {
+            "id": { "$ref": "#/$defs/IdString" },
+            "screenName": { "type": "string" },
+            "name": { "type": "string" }
+          },
+          "required": ["id", "screenName", "name"],
+          "additionalProperties": false
+        },
+        "metrics": { "$ref": "#/$defs/Metrics" },
+        "createdAt": { "type": "string" },
+        "createdAtISO": { "type": "string" }
+      },
+      "required": ["id", "text", "author", "metrics", "createdAt", "createdAtISO"],
+      "additionalProperties": false
+    },
+    "Tweet": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/IdString" },
+        "text": { "type": "string" },
+        "author": { "$ref": "#/$defs/Author" },
+        "metrics": { "$ref": "#/$defs/Metrics" },
+        "createdAt": { "type": "string" },
+        "createdAtLocal": { "type": "string" },
+        "createdAtISO": { "type": "string" },
+        "media": { "type": "array", "items": { "$ref": "#/$defs/Media" } },
+        "urls": { "type": "array", "items": { "type": "string" } },
+        "mentions": { "type": "array", "items": { "type": "string" } },
+        "hashtags": { "type": "array", "items": { "type": "string" } },
+        "isRetweet": { "type": "boolean" },
+        "retweetedBy": { "type": ["string", "null"] },
+        "retweetedAt": { "type": ["string", "null"] },
+        "retweetedAtISO": { "type": ["string", "null"] },
+        "inReplyToId": { "type": ["string", "null"] },
+        "inReplyToUser": { "type": ["string", "null"] },
+        "conversationId": { "type": ["string", "null"] },
+        "lang": { "type": "string" },
+        "score": { "type": ["number", "null"] },
+        "isSubscriberOnly": { "type": "boolean" },
+        "isPromoted": { "type": "boolean" },
+        "articleTitle": { "type": ["string", "null"] },
+        "articleText": { "type": ["string", "null"] },
+        "quotedTweet": {
+          "oneOf": [{ "$ref": "#/$defs/QuotedTweet" }, { "type": "null" }]
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "author",
+        "metrics",
+        "createdAt",
+        "createdAtLocal",
+        "createdAtISO",
+        "media",
+        "urls",
+        "mentions",
+        "hashtags",
+        "isRetweet",
+        "retweetedBy",
+        "retweetedAt",
+        "retweetedAtISO",
+        "inReplyToId",
+        "inReplyToUser",
+        "conversationId",
+        "lang",
+        "score",
+        "isSubscriberOnly",
+        "isPromoted",
+        "articleTitle",
+        "articleText",
+        "quotedTweet"
+      ],
+      "additionalProperties": false
+    },
+    "UserFields": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/IdString" },
+        "name": { "type": "string" },
+        "screenName": { "type": "string" },
+        "bio": { "type": "string" },
+        "location": { "type": "string" },
+        "url": { "type": "string" },
+        "followers": { "$ref": "#/$defs/Count" },
+        "following": { "$ref": "#/$defs/Count" },
+        "tweets": { "$ref": "#/$defs/Count" },
+        "likes": { "$ref": "#/$defs/Count" },
+        "verified": { "type": "boolean" },
+        "profileImageUrl": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "createdAtISO": { "type": "string" }
+      },
+      "required": [
+        "id",
+        "name",
+        "screenName",
+        "bio",
+        "location",
+        "url",
+        "followers",
+        "following",
+        "tweets",
+        "likes",
+        "verified",
+        "profileImageUrl",
+        "createdAt",
+        "createdAtISO"
+      ]
+    },
+    "User": {
+      "$ref": "#/$defs/UserFields",
+      "unevaluatedProperties": false
+    },
+    "AccountUser": {
+      "$ref": "#/$defs/UserFields",
+      "properties": {
+        "username": { "type": "string" }
+      },
+      "required": ["username"],
+      "unevaluatedProperties": false
+    },
+    "TwitterList": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/IdString" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "memberCount": { "$ref": "#/$defs/Count" },
+        "subscriberCount": { "$ref": "#/$defs/Count" },
+        "isPrivate": { "type": "boolean" },
+        "ownerScreenName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "description", "memberCount", "subscriberCount", "isPrivate", "ownerScreenName", "createdAt"],
+      "additionalProperties": false
+    },
+    "ScheduledTweet": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/IdString" },
+        "text": { "type": "string" },
+        "executeAt": { "type": "integer" },
+        "executeAtISO": { "type": "string" },
+        "executeAtLocal": { "type": "string" },
+        "state": { "type": "string" },
+        "mediaIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "text", "executeAt", "executeAtISO", "executeAtLocal", "state", "mediaIds"],
+      "additionalProperties": false
+    },
+    "BookmarkFolder": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/IdString" },
+        "name": { "type": "string" }
+      },
+      "required": ["id", "name"],
+      "additionalProperties": false
+    },
+    "PostResult": {
+      "type": "object",
+      "properties": {
+        "success": { "const": true },
+        "action": { "const": "post" },
+        "id": { "$ref": "#/$defs/IdString" },
+        "url": { "type": "string" }
+      },
+      "required": ["success", "action", "id", "url"],
+      "additionalProperties": false
+    },
+    "ReplyResult": {
+      "type": "object",
+      "properties": {
+        "success": { "const": true },
+        "action": { "const": "reply" },
+        "id": { "$ref": "#/$defs/IdString" },
+        "replyTo": { "$ref": "#/$defs/IdString" },
+        "url": { "type": "string" }
+      },
+      "required": ["success", "action", "id", "replyTo", "url"],
+      "additionalProperties": false
+    },
+    "QuoteResult": {
+      "type": "object",
+      "properties": {
+        "success": { "const": true },
+        "action": { "const": "quote" },
+        "id": { "$ref": "#/$defs/IdString" },
+        "quotedId": { "$ref": "#/$defs/IdString" },
+        "url": { "type": "string" }
+      },
+      "required": ["success", "action", "id", "quotedId", "url"],
+      "additionalProperties": false
+    },
+    "TweetActionResult": {
+      "type": "object",
+      "properties": {
+        "success": { "const": true },
+        "action": { "enum": ["delete", "like", "unlike", "retweet", "unretweet", "bookmark", "unbookmark", "unschedule"] },
+        "id": { "$ref": "#/$defs/IdString" }
+      },
+      "required": ["success", "action", "id"],
+      "additionalProperties": false
+    },
+    "FollowResult": {
+      "type": "object",
+      "properties": {
+        "success": { "const": true },
+        "action": { "enum": ["follow", "unfollow"] },
+        "screenName": { "type": "string" },
+        "userId": { "$ref": "#/$defs/IdString" }
+      },
+      "required": ["success", "action", "screenName", "userId"],
+      "additionalProperties": false
+    },
+    "ScheduleResult": {
+      "type": "object",
+      "properties": {
+        "success": { "const": true },
+        "action": { "const": "schedule" },
+        "id": { "$ref": "#/$defs/IdString" },
+        "executeAt": { "type": "integer" },
+        "executeAtISO": { "type": "string" },
+        "executeAtLocal": { "type": "string" }
+      },
+      "required": ["success", "action", "id", "executeAt", "executeAtISO", "executeAtLocal"],
+      "additionalProperties": false
+    },
+    "RefreshResult": {
+      "type": "object",
+      "properties": {
+        "scannedScripts": { "$ref": "#/$defs/Count" },
+        "availableChunks": { "$ref": "#/$defs/Count" },
+        "found": { "$ref": "#/$defs/Count" },
+        "changed": { "type": "array", "items": { "type": "string" } },
+        "missing": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["scannedScripts", "availableChunks", "found", "changed", "missing"],
+      "additionalProperties": false
+    },
+    "TweetPage": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "schema_version": { "const": "1" },
+        "data": { "type": "array", "items": { "$ref": "#/$defs/Tweet" } },
+        "pagination": { "$ref": "#/$defs/Pagination" }
+      },
+      "required": ["ok", "schema_version", "data"],
+      "additionalProperties": false
+    },
+    "UserPage": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "schema_version": { "const": "1" },
+        "data": { "type": "array", "items": { "$ref": "#/$defs/User" } },
+        "pagination": { "$ref": "#/$defs/Pagination" }
+      },
+      "required": ["ok", "schema_version", "data"],
+      "additionalProperties": false
+    },
+    "ListPage": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "schema_version": { "const": "1" },
+        "data": { "type": "array", "items": { "$ref": "#/$defs/TwitterList" } },
+        "pagination": { "$ref": "#/$defs/Pagination" }
+      },
+      "required": ["ok", "schema_version", "data"],
+      "additionalProperties": false
+    },
+    "ScheduledTweetList": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "schema_version": { "const": "1" },
+        "data": { "type": "array", "items": { "$ref": "#/$defs/ScheduledTweet" } }
+      },
+      "required": ["ok", "schema_version", "data"],
+      "additionalProperties": false
+    },
+    "BookmarkFolderList": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "schema_version": { "const": "1" },
+        "data": { "type": "array", "items": { "$ref": "#/$defs/BookmarkFolder" } }
+      },
+      "required": ["ok", "schema_version", "data"],
+      "additionalProperties": false
+    },
+    "TweetResponse": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "schema_version": { "const": "1" },
+        "data": { "$ref": "#/$defs/Tweet" }
+      },
+      "required": ["ok", "schema_version", "data"],
+      "additionalProperties": false
+    },
+    "UserResponse": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "schema_version": { "const": "1" },
+        "data": { "$ref": "#/$defs/User" }
+      },
+      "required": ["ok", "schema_version", "data"],
+      "additionalProperties": false
+    },
+    "StatusResponse": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "schema_version": { "const": "1" },
+        "data": {
+          "type": "object",
+          "properties": {
+            "authenticated": { "const": true },
+            "user": { "$ref": "#/$defs/AccountUser" }
+          },
+          "required": ["authenticated", "user"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["ok", "schema_version", "data"],
+      "additionalProperties": false
+    },
+    "WhoamiResponse": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "schema_version": { "const": "1" },
+        "data": {
+          "type": "object",
+          "properties": {
+            "user": { "$ref": "#/$defs/AccountUser" }
+          },
+          "required": ["user"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["ok", "schema_version", "data"],
+      "additionalProperties": false
+    },
+    "WriteResponse": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "schema_version": { "const": "1" },
+        "data": {
+          "oneOf": [
+            { "$ref": "#/$defs/PostResult" },
+            { "$ref": "#/$defs/ReplyResult" },
+            { "$ref": "#/$defs/QuoteResult" },
+            { "$ref": "#/$defs/TweetActionResult" },
+            { "$ref": "#/$defs/FollowResult" },
+            { "$ref": "#/$defs/ScheduleResult" }
+          ]
+        }
+      },
+      "required": ["ok", "schema_version", "data"],
+      "additionalProperties": false
+    },
+    "RefreshResponse": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "schema_version": { "const": "1" },
+        "data": { "$ref": "#/$defs/RefreshResult" }
+      },
+      "required": ["ok", "schema_version", "data"],
+      "additionalProperties": false
+    }
+  }
+}

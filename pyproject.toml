@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "twitter-cli"
-version = "0.8.6+fork.5"
+version = "0.8.6+fork.6"
 description = "A CLI for Twitter/X — feed, bookmarks, and user timeline in terminal"
 readme = "README.md"
 license = "Apache-2.0"
@@ -35,6 +35,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.14,<1.15",
     "types-PyYAML>=6.0.12",
+    "jsonschema>=4.18",
 ]
 
 [project.urls]

@@ -635,7 +635,7 @@ def test_cli_like_yaml_output(monkeypatch) -> None:
     assert result.exit_code == 0
     payload = yaml.safe_load(result.output)
     assert payload["ok"] is True
-    assert payload["data"]["action"] == "liking_tweet"
+    assert payload["data"]["action"] == "like"
     assert payload["data"]["id"] == "123"
 
 

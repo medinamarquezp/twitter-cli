@@ -51,11 +51,10 @@ def tweet_to_dict(tweet: Tweet) -> Dict[str, Any]:
         "score": tweet.score,
         "isSubscriberOnly": tweet.is_subscriber_only,
         "isPromoted": tweet.is_promoted,
+        "articleTitle": tweet.article_title,
+        "articleText": tweet.article_text,
+        "quotedTweet": None,
     }
-    if tweet.article_title is not None:
-        data["articleTitle"] = tweet.article_title
-    if tweet.article_text is not None:
-        data["articleText"] = tweet.article_text
     if tweet.quoted_tweet:
         data["quotedTweet"] = {
             "id": tweet.quoted_tweet.id,

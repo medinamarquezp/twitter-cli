@@ -107,23 +107,7 @@ SEARCH_EXCLUDE_CHOICES = ["retweets", "replies", "links"]
 
 def _agent_user_profile(profile: UserProfile) -> dict:
     """Normalize a Twitter/X profile for structured agent output."""
-    data = user_profile_to_dict(profile)
-    return {
-        "id": data["id"],
-        "name": data["name"],
-        "username": data["screenName"],
-        "screenName": data["screenName"],
-        "bio": data["bio"],
-        "location": data["location"],
-        "url": data["url"],
-        "followers": data["followers"],
-        "following": data["following"],
-        "tweets": data["tweets"],
-        "likes": data["likes"],
-        "verified": data["verified"],
-        "profileImageUrl": data["profileImageUrl"],
-        "createdAt": data["createdAt"],
-    }
+    return dict(user_profile_to_dict(profile), username=profile.screen_name)
 
 
 def _setup_logging(verbose):
@@ -1424,13 +1408,12 @@ def _upload_images(client, image_paths, rich_output=True):
     return media_ids
 
 
-def _write_action(emoji, action_desc, client_method, tweet_id, as_json=False, as_yaml=False):
-    # type: (str, str, str, str, bool, bool) -> None
+def _write_action(emoji, action_desc, client_method, tweet_id, action_name, as_json=False, as_yaml=False):
+    # type: (str, str, str, str, str, bool, bool) -> None
     """Generic write action helper to reduce CLI command boilerplate.
 
     Emits structured JSON/YAML when piped or when OUTPUT env is set.
     """
-    action_name = action_desc.lower().replace(" ", "_")
 
     def operation(client: TwitterClient) -> WritePayload:
         getattr(client, client_method)(tweet_id)
@@ -1739,7 +1722,7 @@ def unfollow_user(screen_name, as_json, as_yaml):
 def delete_tweet(tweet_id, as_json, as_yaml):
     # type: (str, bool, bool) -> None
     """Delete a tweet. TWEET_ID is the numeric tweet ID."""
-    _write_action("🗑️", "Deleting tweet", "delete_tweet", tweet_id, as_json=as_json, as_yaml=as_yaml)
+    _write_action("🗑️", "Deleting tweet", "delete_tweet", tweet_id, "delete", as_json=as_json, as_yaml=as_yaml)
 
 
 @cli.command()
@@ -1748,7 +1731,7 @@ def delete_tweet(tweet_id, as_json, as_yaml):
 def like(tweet_id, as_json, as_yaml):
     # type: (str, bool, bool) -> None
     """Like a tweet. TWEET_ID is the numeric tweet ID."""
-    _write_action("❤️", "Liking tweet", "like_tweet", tweet_id, as_json=as_json, as_yaml=as_yaml)
+    _write_action("❤️", "Liking tweet", "like_tweet", tweet_id, "like", as_json=as_json, as_yaml=as_yaml)
 
 
 @cli.command()
@@ -1757,7 +1740,7 @@ def like(tweet_id, as_json, as_yaml):
 def unlike(tweet_id, as_json, as_yaml):
     # type: (str, bool, bool) -> None
     """Unlike a tweet. TWEET_ID is the numeric tweet ID."""
-    _write_action("💔", "Unliking tweet", "unlike_tweet", tweet_id, as_json=as_json, as_yaml=as_yaml)
+    _write_action("💔", "Unliking tweet", "unlike_tweet", tweet_id, "unlike", as_json=as_json, as_yaml=as_yaml)
 
 
 @cli.command()
@@ -1766,7 +1749,7 @@ def unlike(tweet_id, as_json, as_yaml):
 def retweet(tweet_id, as_json, as_yaml):
     # type: (str, bool, bool) -> None
     """Retweet a tweet. TWEET_ID is the numeric tweet ID."""
-    _write_action("🔄", "Retweeting", "retweet", tweet_id, as_json=as_json, as_yaml=as_yaml)
+    _write_action("🔄", "Retweeting", "retweet", tweet_id, "retweet", as_json=as_json, as_yaml=as_yaml)
 
 
 @cli.command()
@@ -1775,7 +1758,7 @@ def retweet(tweet_id, as_json, as_yaml):
 def unretweet(tweet_id, as_json, as_yaml):
     # type: (str, bool, bool) -> None
     """Undo a retweet. TWEET_ID is the numeric tweet ID."""
-    _write_action("🔄", "Undoing retweet", "unretweet", tweet_id, as_json=as_json, as_yaml=as_yaml)
+    _write_action("🔄", "Undoing retweet", "unretweet", tweet_id, "unretweet", as_json=as_json, as_yaml=as_yaml)
 
 
 @cli.command()
@@ -1784,7 +1767,7 @@ def unretweet(tweet_id, as_json, as_yaml):
 def favorite(tweet_id, as_json, as_yaml):
     # type: (str, bool, bool) -> None
     """Bookmark (favorite) a tweet. TWEET_ID is the numeric tweet ID."""
-    _write_action("🔖", "Bookmarking tweet", "bookmark_tweet", tweet_id, as_json=as_json, as_yaml=as_yaml)
+    _write_action("🔖", "Bookmarking tweet", "bookmark_tweet", tweet_id, "bookmark", as_json=as_json, as_yaml=as_yaml)
 
 
 @cli.command()
@@ -1793,7 +1776,7 @@ def favorite(tweet_id, as_json, as_yaml):
 def bookmark(tweet_id, as_json, as_yaml):
     # type: (str, bool, bool) -> None
     """Bookmark a tweet. TWEET_ID is the numeric tweet ID."""
-    _write_action("🔖", "Bookmarking tweet", "bookmark_tweet", tweet_id, as_json=as_json, as_yaml=as_yaml)
+    _write_action("🔖", "Bookmarking tweet", "bookmark_tweet", tweet_id, "bookmark", as_json=as_json, as_yaml=as_yaml)
 
 
 @cli.command()
@@ -1802,7 +1785,7 @@ def bookmark(tweet_id, as_json, as_yaml):
 def unfavorite(tweet_id, as_json, as_yaml):
     # type: (str, bool, bool) -> None
     """Remove a tweet from bookmarks (unfavorite). TWEET_ID is the numeric tweet ID."""
-    _write_action("🔖", "Removing bookmark", "unbookmark_tweet", tweet_id, as_json=as_json, as_yaml=as_yaml)
+    _write_action("🔖", "Removing bookmark", "unbookmark_tweet", tweet_id, "unbookmark", as_json=as_json, as_yaml=as_yaml)
 
 
 @cli.command()
@@ -1811,7 +1794,7 @@ def unfavorite(tweet_id, as_json, as_yaml):
 def unbookmark(tweet_id, as_json, as_yaml):
     # type: (str, bool, bool) -> None
     """Remove a tweet from bookmarks. TWEET_ID is the numeric tweet ID."""
-    _write_action("🔖", "Removing bookmark", "unbookmark_tweet", tweet_id, as_json=as_json, as_yaml=as_yaml)
+    _write_action("🔖", "Removing bookmark", "unbookmark_tweet", tweet_id, "unbookmark", as_json=as_json, as_yaml=as_yaml)
 
 
 
