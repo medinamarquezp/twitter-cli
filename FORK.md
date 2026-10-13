@@ -11,7 +11,7 @@ This fork of [public-clis/twitter-cli](https://github.com/public-clis/twitter-cl
 ## Install
 
 ```bash
-uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.2
+uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.3
 ```
 
 ## Integrated upstream pull requests
@@ -45,12 +45,19 @@ uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.2
 | `0.8.6+fork.2` | `user-posts --with-replies` reads the replies tab (`UserTweetsAndReplies`) |
 | `0.8.6+fork.2` | List commands return whole pages: `--max` sets how many results to collect at least, and `pagination.nextCursor` resumes right after the last one returned. Before, pages were trimmed to `--max` while the cursor pointed past the whole page, so every continuation skipped results (X ignores the requested count: the following feed returns about 100 tweets per page and follower lists about 50 users). `bookmarks`, `user-posts`, `search`, `likes`, `followers` and `following` gained `--cursor`, which also lets follower lists go past the per-call cap across several calls |
 | `0.8.6+fork.2` | Promoted tweets are dropped unless they are requested |
+| `0.8.6+fork.3` | `mentions [SCREEN_NAME]`: latest posts mentioning a user, without the user's own (search `@handle -from:handle`); defaults to the logged-in account |
+| `0.8.6+fork.3` | `conversation TWEET_ID`: a tweet and its replies, newest replies first, through `TweetDetail` with cursors. A `conversation_id:` search returned nothing for a conversation that has replies |
+| `0.8.6+fork.3` | `quotes TWEET_ID`: posts quoting a tweet, through a `quoted_tweet_id:` search |
+| `0.8.6+fork.3` | `retweeters TWEET_ID` and `list-members LIST_ID`, with cursors |
+| `0.8.6+fork.3` | `lists [SCREEN_NAME]`: lists a user owns, through the 1.1 `lists/ownerships.json` endpoint. `CombinedLists`, `ListsManagementPageTimeline` and `ListOwnerships` answer `DecodeException` for an account that owns a list, even with the web's feature flags |
+| `0.8.6+fork.3` | Handles, tweet IDs and list IDs are validated before they are used, so arguments cannot inject search operators |
+| `0.8.6+fork.3` | A Bottom cursor nested inside a timeline item is now followed |
 
 ## Planned fork work
 
-- New commands: mentions, full conversations, quotes and retweeters of a tweet, your lists and their members.
 - Native scheduling through `CreateScheduledTweet`: schedule, list and cancel posts.
 - A stable JSON schema for every command.
+- Fix the x.com bundle scan for live query IDs: it currently finds no operation at all, so live IDs come only from twitter-openapi.
 
 ## Testing
 
