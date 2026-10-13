@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from typing import List, Optional
 
 from rich.console import Console
@@ -10,7 +11,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from .models import Tweet, TwitterList, UserProfile
+from .models import ScheduledTweet, Tweet, TwitterList, UserProfile
 from .timeutil import format_local_time, format_relative_time
 
 
@@ -321,6 +322,28 @@ def print_user_table(
         )
 
         table.add_row(str(i + 1), user_text, bio, stats)
+
+    console.print(table)
+
+
+def print_scheduled_table(
+    items: List[ScheduledTweet],
+    console: Optional[Console] = None,
+) -> None:
+    if console is None:
+        console = _make_console()
+
+    table = Table(title="🗓️  Scheduled posts — %d" % len(items), show_lines=True, expand=True)
+    table.add_column("#", style="dim", width=3, justify="right")
+    table.add_column("When", style="cyan", no_wrap=True)
+    table.add_column("Text", ratio=3)
+    table.add_column("ID", style="dim", no_wrap=True)
+
+    for i, item in enumerate(items):
+        when = datetime.fromtimestamp(item.execute_at).strftime("%Y-%m-%d %H:%M")
+        text = item.text.replace("\n", " ").strip()
+        media = " 🖼️ %d" % len(item.media_ids) if item.media_ids else ""
+        table.add_row(str(i + 1), when, (text[:137] + "..." if len(text) > 140 else text) + media, item.id)
 
     console.print(table)
 

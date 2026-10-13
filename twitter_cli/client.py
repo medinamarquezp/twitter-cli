@@ -48,11 +48,12 @@ from .graphql import (
     _resolve_query_id,
     _update_features_from_html,
 )
-from .models import BookmarkFolder, UserProfile
+from .models import BookmarkFolder, ScheduledTweet, UserProfile
 from .parser import (
     _deep_get,
     _parse_int,
     parse_list_result,
+    parse_scheduled_tweet,
     parse_timeline_response,
     parse_tweet_result,
     parse_user_result,
@@ -756,6 +757,35 @@ class TwitterClient:
         variables = {"tweet_id": tweet_id, "dark_request": False}
         self._graphql_post("DeleteTweet", variables)
         self._write_delay()
+        return True
+
+    def schedule_tweet(self, text: str, execute_at: int, media_ids: Optional[List[str]] = None) -> str:
+        variables = {
+            "post_tweet_request": {
+                "auto_populate_reply_metadata": False,
+                "status": text,
+                "exclude_reply_user_ids": [],
+                "media_ids": list(media_ids or []),
+            },
+            "execute_at": execute_at,
+        }
+        data = self._graphql_post("CreateScheduledTweet", variables)
+        self._write_delay()
+        scheduled_id = _deep_get(data, "data", "tweet", "rest_id")
+        if not scheduled_id:
+            raise TwitterAPIError(0, "CreateScheduledTweet returned no scheduled tweet id")
+        return str(scheduled_id)
+
+    def fetch_scheduled_tweets(self) -> List[ScheduledTweet]:
+        data = self._graphql_get("FetchScheduledTweets", {"ascending": True}, FEATURES)
+        raw_items = _deep_get(data, "data", "viewer", "scheduled_tweet_list") or []
+        return [item for item in (parse_scheduled_tweet(raw) for raw in raw_items) if item]
+
+    def delete_scheduled_tweet(self, scheduled_id: str) -> bool:
+        data = self._graphql_post("DeleteScheduledTweet", {"scheduled_tweet_id": scheduled_id})
+        self._write_delay()
+        if _deep_get(data, "data", "scheduledtweet_delete") != "Done":
+            raise TwitterAPIError(0, "DeleteScheduledTweet did not confirm the cancellation")
         return True
 
     def like_tweet(self, tweet_id):

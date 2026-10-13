@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
-from .models import Author, BookmarkFolder, Metrics, Tweet, TweetMedia, TwitterList, UserProfile
+from .models import Author, BookmarkFolder, Metrics, ScheduledTweet, Tweet, TweetMedia, TwitterList, UserProfile
 from .timeutil import format_iso8601, format_local_time
 
 
@@ -268,6 +269,29 @@ def twitter_list_to_dict(item: TwitterList) -> Dict[str, Any]:
 
 def twitter_lists_to_data(items: Iterable[TwitterList]) -> List[Dict[str, Any]]:
     return [twitter_list_to_dict(item) for item in items]
+
+
+def execute_at_fields(execute_at: int) -> Dict[str, Any]:
+    moment = datetime.fromtimestamp(execute_at, tz=timezone.utc)
+    return {
+        "executeAt": execute_at,
+        "executeAtISO": moment.isoformat(),
+        "executeAtLocal": moment.astimezone().strftime("%Y-%m-%d %H:%M"),
+    }
+
+
+def scheduled_tweet_to_dict(item: ScheduledTweet) -> Dict[str, Any]:
+    return {
+        "id": item.id,
+        "text": item.text,
+        **execute_at_fields(item.execute_at),
+        "state": item.state,
+        "mediaIds": list(item.media_ids),
+    }
+
+
+def scheduled_tweets_to_data(items: Iterable[ScheduledTweet]) -> List[Dict[str, Any]]:
+    return [scheduled_tweet_to_dict(item) for item in items]
 
 
 def _optional_int(value: Any) -> Optional[int]:

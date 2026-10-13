@@ -38,6 +38,7 @@ import re
 import sys
 import time
 import urllib.parse
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -58,6 +59,7 @@ from .formatter import (
     print_article,
     print_tweet_detail,
     print_list_table,
+    print_scheduled_table,
     print_tweet_table,
     print_user_profile,
     print_user_table,
@@ -74,6 +76,8 @@ from .output import (
     use_rich_output,
 )
 from .serialization import (
+    execute_at_fields,
+    scheduled_tweets_to_data,
     tweet_to_dict,
     tweets_from_json,
     tweets_to_data,
@@ -1436,6 +1440,97 @@ def post(text, reply_to, images, as_json, as_yaml):
     )
     if payload and not _structured_mode(as_json=as_json, as_yaml=as_yaml):
         console.print("🔗 %s" % payload["url"])
+
+
+_MIN_SCHEDULE_LEAD_SECONDS = 300
+
+
+def _parse_schedule_time(value: str) -> int:
+    try:
+        moment = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise click.BadParameter(
+            "use ISO 8601, e.g. 2026-10-20T09:30+02:00, or local time as 2026-10-20 09:30",
+            param_hint="--at",
+        ) from exc
+    if moment.tzinfo is None:
+        moment = moment.astimezone()
+    execute_at = int(moment.timestamp())
+    if execute_at < int(time.time()) + _MIN_SCHEDULE_LEAD_SECONDS:
+        raise click.BadParameter("must be at least 5 minutes in the future", param_hint="--at")
+    return execute_at
+
+
+@cli.command()
+@click.argument("text")
+@click.option(
+    "--at",
+    "at_time",
+    required=True,
+    help="Publication time in ISO 8601 (2026-10-20T09:30+02:00); without an offset it is local time.",
+)
+@click.option("--image", "-i", "images", multiple=True, type=click.Path(exists=True), help="Attach image (up to 4). Repeatable.")
+@structured_output_options
+def schedule(text, at_time, images, as_json, as_yaml):
+    """Schedule a post on X, which publishes it at --at even if this machine is off."""
+    execute_at = _parse_schedule_time(at_time)
+    rich_output = not _structured_mode(as_json=as_json, as_yaml=as_yaml)
+
+    def operation(client: TwitterClient) -> WritePayload:
+        media_ids = _upload_images(client, images, rich_output=rich_output)
+        scheduled_id = client.schedule_tweet(text, execute_at, media_ids=media_ids or None)
+        return {"success": True, "action": "schedule", "id": scheduled_id, **execute_at_fields(execute_at)}
+
+    payload = _run_write_command(
+        as_json=as_json,
+        as_yaml=as_yaml,
+        operation=operation,
+        progress_lines=["🗓️  Scheduling post..."],
+        success_lines=["[green]✅ Post scheduled![/green]"],
+        error_details={"action": "schedule", "executeAt": execute_at},
+    )
+    if payload and rich_output:
+        console.print("🗓️  %s · id %s" % (payload["executeAtLocal"], payload["id"]))
+
+
+@cli.command(name="scheduled")
+@structured_output_options
+def scheduled_posts(as_json, as_yaml):
+    """List your scheduled posts, soonest first."""
+    config = load_config()
+    rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml)
+
+    def _run():
+        client = _get_client(config, quiet=not rich_output)
+        items = client.fetch_scheduled_tweets()
+        if emit_structured(success_payload(scheduled_tweets_to_data(items)), as_json=as_json, as_yaml=as_yaml):
+            return
+        print_scheduled_table(items, console)
+        console.print()
+
+    _run_guarded(_run)
+
+
+@cli.command(name="unschedule")
+@click.argument("scheduled_id")
+@structured_output_options
+def unschedule(scheduled_id, as_json, as_yaml):
+    """Cancel a scheduled post. SCHEDULED_ID comes from `scheduled`."""
+    if not scheduled_id.isdigit():
+        raise click.BadParameter("must be the numeric id shown by `scheduled`", param_hint="SCHEDULED_ID")
+
+    def operation(client: TwitterClient) -> WritePayload:
+        client.delete_scheduled_tweet(scheduled_id)
+        return {"success": True, "action": "unschedule", "id": scheduled_id}
+
+    _run_write_command(
+        as_json=as_json,
+        as_yaml=as_yaml,
+        operation=operation,
+        progress_lines=["🗑️  Cancelling scheduled post %s..." % scheduled_id],
+        success_lines=["[green]✅ Scheduled post cancelled.[/green]"],
+        error_details={"action": "unschedule", "id": scheduled_id},
+    )
 
 
 @cli.command(name="reply")

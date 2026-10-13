@@ -88,6 +88,15 @@ class UserProfile:
 
 
 @dataclass
+class ScheduledTweet:
+    id: str
+    text: str
+    execute_at: int
+    state: str = ""
+    media_ids: List[str] = field(default_factory=list)
+
+
+@dataclass
 class TwitterList:
     id: str
     name: str

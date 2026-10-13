@@ -60,6 +60,9 @@ FALLBACK_QUERY_IDS = {
     "UserTweetsAndReplies": "D5eKzDa5ZoJuC1TCeAXbWA",
     "Retweeters": "TZsWuSj7vGmncVnq7KWDUQ",
     "ListMembers": "oIetCo19avgStX4mOnGsPg",
+    "CreateScheduledTweet": "LCVzRQGxOaGnOnYH01NQXg",
+    "FetchScheduledTweets": "H2elmT2R9DLhWoo0DZFNkA",
+    "DeleteScheduledTweet": "CTOVqej0JBXAZSwkp1US0g",
 }
 
 # ── Default feature flags ────────────────────────────────────────────────

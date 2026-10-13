@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Any, Callable, Dict, List, Optional, Tuple  # noqa: F401
 
-from .models import Author, Metrics, Tweet, TweetMedia, TwitterList, UserProfile
+from .models import Author, Metrics, ScheduledTweet, Tweet, TweetMedia, TwitterList, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -406,6 +406,22 @@ def parse_user_result(user_data):
         verified=user_data.get("is_blue_verified", False) or legacy.get("verified", False),
         profile_image_url=avatar.get("image_url") or legacy.get("profile_image_url_https", ""),
         created_at=core.get("created_at") or legacy.get("created_at", ""),
+    )
+
+
+def parse_scheduled_tweet(item: Any) -> Optional[ScheduledTweet]:
+    if not isinstance(item, dict) or not item.get("rest_id"):
+        return None
+    execute_at = _parse_int(_deep_get(item, "scheduling_info", "execute_at"), 0)
+    if execute_at > 10**11:
+        execute_at //= 1000
+    request = item.get("tweet_create_request") or {}
+    return ScheduledTweet(
+        id=str(item["rest_id"]),
+        text=str(request.get("status") or ""),
+        execute_at=execute_at,
+        state=str(_deep_get(item, "scheduling_info", "state") or ""),
+        media_ids=[str(media_id) for media_id in request.get("media_ids") or []],
     )
 
 
