@@ -11,7 +11,7 @@ This fork of [public-clis/twitter-cli](https://github.com/public-clis/twitter-cl
 ## Install
 
 ```bash
-uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.5
+uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.6
 ```
 
 ## Integrated upstream pull requests
@@ -55,12 +55,14 @@ uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.5
 | `0.8.6+fork.4` | Native scheduling: `schedule TEXT --at TIME [-i IMAGE]` (`CreateScheduledTweet`; X publishes the post even when this machine is off), `scheduled` (`FetchScheduledTweets`) and `unschedule ID` (`DeleteScheduledTweet`). `--at` takes ISO 8601, local time without an offset, at least five minutes ahead. `scheduled` is verified against X; `schedule` and `unschedule` are covered by tests but not yet exercised against a live account |
 | `0.8.6+fork.5` | `refresh-query-ids [--quick]`: scans the logged-in x.com web build (`main.js`, `vendor.js` and about 540 on-demand chunks, about 25 seconds) and saves every operation found to `~/.twitter-cli/web_query_ids.json`; `--quick` stops once the fork's operations are found. These IDs are used only for operations without a built-in ID or after an ID is rejected, so working IDs are never replaced, and a rejected ID is never handed back |
 | `0.8.6+fork.5` | The automatic bundle scan reads the cached logged-in page (`main.js` and `vendor.js`) instead of the logged-out shell, which links no operation, and keeps its findings apart from the main cache |
+| `0.8.6+fork.6` | Stable structured output: [`schema/twitter-cli.schema.json`](schema/twitter-cli.schema.json) (JSON Schema 2020-12) and [`SCHEMA.md`](SCHEMA.md) describe every command's envelope, checked by contract tests that also validate tweets parsed from recorded X responses |
+| `0.8.6+fork.6` | Tweets always include `articleTitle`, `articleText` and `quotedTweet` (null when absent); `status` and `whoami` return the full user object plus `username`; write commands report the command name as `action` (`like`, `unretweet`, …) instead of a progress phrase (`liking_tweet`) |
 
 Live web IDs also explained the list `DecodeException`: the twitter-openapi IDs for `CombinedLists`, `ListsManagementPageTimeline` and `ListOwnerships` no longer match the ones the web uses.
 
 ## Planned fork work
 
-- A stable JSON schema for every command.
+- Nothing scheduled. `schedule`, `unschedule` and long posts still need a check against a live account.
 
 ## Testing
 
