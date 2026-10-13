@@ -893,3 +893,23 @@ def test_show_malformed_cache_treated_as_empty(monkeypatch, tmp_path):
     result = runner.invoke(cli, ["show", "1"])
     assert result.exit_code != 0
     assert "No cached results" in result.output
+
+
+def test_structured_output_builds_quiet_clients(monkeypatch, tweet_factory) -> None:
+    class FakeClient:
+        def fetch_bookmarks(self, count: int):
+            return [tweet_factory("1")]
+
+        def fetch_list_timeline(self, list_id: str, count: int, cursor=None, return_cursor=False):
+            return [tweet_factory("2")], None
+
+    quiet_flags = []
+    monkeypatch.setattr(
+        "twitter_cli.cli._get_client",
+        lambda config=None, quiet=False: quiet_flags.append(quiet) or FakeClient(),
+    )
+    runner = CliRunner()
+
+    assert runner.invoke(cli, ["bookmarks", "--json"]).exit_code == 0
+    assert runner.invoke(cli, ["list", "123", "--json"]).exit_code == 0
+    assert quiet_flags == [True, True]

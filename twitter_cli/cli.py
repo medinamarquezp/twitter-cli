@@ -277,7 +277,7 @@ def _run_write_command(
 ) -> Optional[WritePayload]:
     mode = _structured_mode(as_json=as_json, as_yaml=as_yaml)
     try:
-        client = _get_client(load_config())
+        client = _get_client(load_config(), quiet=mode is not None)
         _print_lines(progress_lines or [], mode)
         payload = operation(client)
     except (TwitterError, RuntimeError) as exc:
@@ -361,9 +361,10 @@ def _emit_timeline_structured(tweets, next_cursor, *, as_json, as_yaml):
 def _run_bookmarks_command(max_count, as_json, as_yaml, output_file, do_filter, compact=False, full_text=False):
     # type: (Optional[int], bool, bool, Optional[str], bool, bool, bool) -> None
     config = load_config()
+    rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml, compact=compact)
 
     def _run():
-        client = _get_client(config)
+        client = _get_client(config, quiet=not rich_output)
         _fetch_and_display(
             lambda count: client.fetch_bookmarks(count),
             "bookmarks",
@@ -571,7 +572,7 @@ def _run_list_bookmark_folders(as_json, as_yaml, compact, output_file=None):
     rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml, compact=compact)
 
     def _run():
-        client = _get_client(config)
+        client = _get_client(config, quiet=not rich_output)
         if rich_output:
             console.print("\U0001f4c2 Fetching bookmark folders...\n")
         folders = client.fetch_bookmark_folders()
@@ -639,9 +640,10 @@ def _filter_tweets_since(tweets, since_str):
 def _run_bookmark_folder_timeline(folder_id, max_count, since, as_json, as_yaml, output_file, do_filter, compact, full_text=False):
     # type: (str, Optional[int], Optional[str], bool, bool, Optional[str], bool, bool, bool) -> None
     config = load_config()
+    rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml, compact=compact)
 
     def _run():
-        client = _get_client(config)
+        client = _get_client(config, quiet=not rich_output)
 
         def fetch_fn(count):
             tweets = client.fetch_bookmark_folder_timeline(folder_id, count)
@@ -1021,7 +1023,7 @@ def list_timeline(ctx, list_id, max_count, cursor, as_json, as_yaml, do_filter, 
     rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml, compact=compact)
 
     def _run():
-        client = _get_client(config)
+        client = _get_client(config, quiet=not rich_output)
         try:
             fetch_count = _resolve_configured_count(config, max_count)
             if rich_output:
