@@ -11,7 +11,7 @@ This fork of [public-clis/twitter-cli](https://github.com/public-clis/twitter-cl
 ## Install
 
 ```bash
-uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.1
+uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.2
 ```
 
 ## Integrated upstream pull requests
@@ -33,16 +33,21 @@ uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.1
 | [#60](https://github.com/public-clis/twitter-cli/pull/60) | Superseded by #64 |
 | #74, #79, #84, #86, #89, #90, #91 | Alternative fixes for the `ClientTransaction` bootstrap issue that #93 already solves |
 
+## Fork changes
+
+| Since | Change |
+|---|---|
+| `0.8.6+fork.2` | No startup cookie check: its two endpoints answer HTTP 404, so it cost two failed requests per run, and it re-read browser cookies even when they came from environment variables. Expired sessions still fail as `not_authenticated` on the first real request |
+| `0.8.6+fork.2` | No progress lines on stderr with `--json` or `--yaml` |
+| `0.8.6+fork.2` | Live-resolved GraphQL query IDs are kept for 30 days in `~/.twitter-cli/query_ids.json`, and a stale ID is retried whenever a different live ID can be resolved |
+| `0.8.6+fork.2` | `~/.twitter-cli` is `0700` and its files `0600` |
+| `0.8.6+fork.2` | Tweets expose `inReplyToId`, `inReplyToUser`, `conversationId`, `mentions`, `hashtags`, `retweetedAt` and `retweetedAtISO`; quoted tweets include the author id, metrics and creation time |
+| `0.8.6+fork.2` | `user-posts --with-replies` reads the replies tab (`UserTweetsAndReplies`) |
+| `0.8.6+fork.2` | List commands return whole pages: `--max` sets how many results to collect at least, and `pagination.nextCursor` resumes right after the last one returned. Before, pages were trimmed to `--max` while the cursor pointed past the whole page, so every continuation skipped results (X ignores the requested count: the following feed returns about 100 tweets per page and follower lists about 50 users). `bookmarks`, `user-posts`, `search`, `likes`, `followers` and `following` gained `--cursor`, which also lets follower lists go past the per-call cap across several calls |
+| `0.8.6+fork.2` | Promoted tweets are dropped unless they are requested |
+
 ## Planned fork work
 
-- Skip the startup cookie check, whose two endpoints now return HTTP 404, and never fall back to browser cookies when they come from environment variables.
-- Persist resolved GraphQL query IDs on disk, so stale fallback IDs do not cause a failed request on every start.
-- Create `~/.twitter-cli` and its files readable by the owner only.
-- Keep structured output clean: no progress messages on stderr with `--json` or `--yaml`.
-- Expose reply, conversation, mention, hashtag and retweet time fields on every tweet.
-- Read a user's replies tab (`UserTweetsAndReplies`).
-- Return resumable cursors from every list command without dropping items, and lift the follower pagination limit.
-- Filter promoted tweets unless they are requested.
 - New commands: mentions, full conversations, quotes and retweeters of a tweet, your lists and their members.
 - Native scheduling through `CreateScheduledTweet`: schedule, list and cancel posts.
 - A stable JSON schema for every command.
