@@ -11,7 +11,7 @@ This fork of [public-clis/twitter-cli](https://github.com/public-clis/twitter-cl
 ## Install
 
 ```bash
-uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.6
+uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.7
 ```
 
 ## Integrated upstream pull requests
@@ -57,6 +57,9 @@ uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.6
 | `0.8.6+fork.5` | The automatic bundle scan reads the cached logged-in page (`main.js` and `vendor.js`) instead of the logged-out shell, which links no operation, and keeps its findings apart from the main cache |
 | `0.8.6+fork.6` | Stable structured output: [`schema/twitter-cli.schema.json`](schema/twitter-cli.schema.json) (JSON Schema 2020-12) and [`SCHEMA.md`](SCHEMA.md) describe every command's envelope, checked by contract tests that also validate tweets parsed from recorded X responses |
 | `0.8.6+fork.6` | Tweets always include `articleTitle`, `articleText` and `quotedTweet` (null when absent); `status` and `whoami` return the full user object plus `username`; write commands report the command name as `action` (`like`, `unretweet`, …) instead of a progress phrase (`liking_tweet`) |
+| `0.8.6+fork.7` | The `x.com/home` request that bootstraps `x-client-transaction-id` keeps curl_cffi's own Chrome headers. The fixed Chrome 127 on Windows headers from `x_client_transaction` now get an interactive Cloudflare challenge (HTTP 403), which left search, followers, following and likes without the header. The `ondemand.s` download no longer sends the session cookie to `abs.twimg.com` |
+| `0.8.6+fork.7` | If that bootstrap fails, the last snapshot up to a day old is used and the refresh is retried after 15 minutes instead of on every run; the warning names the cause, such as a Cloudflare challenge |
+| `0.8.6+fork.7` | `user-posts` includes the profile's pinned tweet, first and flagged `isPinned`. X sends it in a separate `TimelinePinEntry` instruction and leaves it out of the timeline entries, so it was missing |
 
 Live web IDs also explained the list `DecodeException`: the twitter-openapi IDs for `CombinedLists`, `ListsManagementPageTimeline` and `ListOwnerships` no longer match the ones the web uses.
 
