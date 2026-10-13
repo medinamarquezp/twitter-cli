@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 import bs4
 from curl_cffi import requests as _cffi_requests
 from x_client_transaction import ClientTransaction
-from x_client_transaction.utils import generate_headers as _gen_ct_headers, get_ondemand_file_url
+from x_client_transaction.utils import get_ondemand_file_url
 
 from .constants import (
     BEARER_TOKEN,
@@ -134,6 +134,23 @@ def _url_fetch(url, headers=None):
     resp = session.get(url, headers=headers or {}, timeout=30)
     resp.raise_for_status()
     return resp.text
+
+
+_CT_CACHE_TTL = 3600
+_CT_STALE_LIMIT = 86400
+_CT_RETRY_DELAY = 900
+
+
+def _gen_ct_headers() -> Dict[str, str]:
+    return {"Accept-Language": get_accept_language()}
+
+
+def _bootstrap_page_error(response: Any) -> str:
+    status = getattr(response, "status_code", "?")
+    text = getattr(response, "text", "")
+    if isinstance(text, str) and ("cf_chl_opt" in text or "Just a moment" in text):
+        return "x.com/home answered HTTP %s with a Cloudflare challenge" % status
+    return "x.com/home answered HTTP %s without the ondemand.s bundle" % status
 
 
 def _is_stale_query_error(exc):
@@ -1247,8 +1264,7 @@ class TwitterClient:
         home_html = cache.get("home_html") if isinstance(cache, dict) else None
         return home_html if isinstance(home_html, str) else ""
 
-    def _load_ct_cache(self):
-        # type: () -> bool
+    def _load_ct_cache(self, allow_stale: bool = False) -> bool:
         """Try to load ClientTransaction from cache.  Returns True on success."""
         try:
             cache_path = self._ct_cache_path()
@@ -1256,8 +1272,10 @@ class TwitterClient:
                 return False
             with open(cache_path, "r", encoding="utf-8") as f:
                 cache = json.load(f)
-            # Check TTL (1 hour)
-            if time.time() - cache.get("created_at", 0) > 3600:
+            now = time.time()
+            age = now - cache.get("created_at", 0)
+            retry_pending = now - cache.get("refresh_failed_at", 0) < _CT_RETRY_DELAY
+            if age > _CT_CACHE_TTL and not ((allow_stale or retry_pending) and age <= _CT_STALE_LIMIT):
                 return False
             home_html = cache.get("home_html", "")
             ondemand_text = cache.get("ondemand_text", "")
@@ -1290,6 +1308,16 @@ class TwitterClient:
         except Exception as exc:
             logger.debug("Failed to save CT cache: %s", exc)
 
+    def _mark_ct_refresh_failed(self) -> None:
+        cache_path = Path(self._ct_cache_path())
+        try:
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+            if isinstance(cache, dict) and cache.get("home_html"):
+                cache["refresh_failed_at"] = time.time()
+                write_private_text(cache_path, json.dumps(cache))
+        except (OSError, ValueError) as exc:
+            logger.debug("Failed to mark the CT cache: %s", exc)
+
     def _ensure_client_transaction(self):
         # type: () -> None
         """Initialize ClientTransaction for x-client-transaction-id header.
@@ -1310,7 +1338,7 @@ class TwitterClient:
             # Chrome TLS fingerprint. Using Python requests here would leak
             # a different TLS fingerprint on the same IP — a detection vector.
             cffi_session = _get_cffi_session()
-            ct_headers = _gen_ct_headers()
+            ct_headers = dict(_gen_ct_headers())
             # The root path serves a lightweight logged-out shell without the
             # ondemand.s bundle. The responsive /home route exposes it, but
             # only when a session cookie is sent (verified 2026-09-29:
@@ -1327,11 +1355,14 @@ class TwitterClient:
                 "https://x.com/home", headers=ct_headers, timeout=10,
             )
             home_page_response = bs4.BeautifulSoup(home_page.content, "html.parser")
-            ondemand_url = get_ondemand_file_url(response=home_page_response)
+            try:
+                ondemand_url = get_ondemand_file_url(response=home_page_response)
+            except AttributeError:
+                ondemand_url = None
             if not ondemand_url:
-                raise ValueError("Failed to extract ondemand file URL from homepage")
+                raise ValueError(_bootstrap_page_error(home_page))
             ondemand_file = cffi_session.get(
-                ondemand_url, headers=ct_headers, timeout=10,
+                ondemand_url, headers=dict(_gen_ct_headers(), Referer="https://x.com/"), timeout=10,
             )
             self._client_transaction = ClientTransaction(
                 home_page_response=home_page_response,
@@ -1345,6 +1376,10 @@ class TwitterClient:
             # Save to cache for future use
             self._save_ct_cache(home_page.text, ondemand_file.text)
         except Exception as exc:
+            self._mark_ct_refresh_failed()
+            if self._load_ct_cache(allow_stale=True):
+                logger.info("Using the cached x.com/home snapshot after a failed refresh: %s", exc)
+                return
             logger.warning("Failed to init ClientTransaction: %s", exc)
 
     def _build_headers(self, url="", method="GET"):

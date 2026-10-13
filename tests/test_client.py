@@ -1805,6 +1805,9 @@ class TestClientTransactionBootstrap:
         # 2. The session cookie was sent on the bootstrap request.
         headers = first.kwargs.get("headers", {})
         assert headers.get("Cookie") == "auth_token=auth_tok; ct0=ct0_val"
+        assert "User-Agent" not in headers
+        assert "Cookie" not in second.kwargs.get("headers", {})
+        assert second.kwargs.get("headers", {}).get("Referer") == "https://x.com/"
         # 3. The ondemand bundle URL was resolved from the /home page
         #    (only possible because the module + hash maps are present).
         assert second.args[0] == (
@@ -1863,3 +1866,82 @@ class TestClientTransactionBootstrap:
             "https://abs.twimg.com/responsive-web/client-web/"
             "ondemand.s.38289b77fa31a72ca.js"
         )
+
+
+_CT_CHALLENGE_HTML = "<html><head><title>Just a moment...</title></head><body><script>window._cf_chl_opt={cType: 'interactive'}</script></body></html>"
+
+
+def _challenge_page() -> MagicMock:
+    return MagicMock(status_code=403, content=_CT_CHALLENGE_HTML.encode("utf-8"), text=_CT_CHALLENGE_HTML)
+
+
+def _bare_client() -> TwitterClient:
+    client = TwitterClient.__new__(TwitterClient)
+    client._auth_token = "auth_tok"
+    client._ct0 = "ct0_val"
+    client._cookie_string = None
+    client._client_transaction = None
+    client._ct_init_attempted = False
+    return client
+
+
+def _write_ct_cache(age: float, **extra: float) -> None:
+    import json
+    import time
+    from pathlib import Path
+
+    payload = {"home_html": _CT_HOME_HTML, "ondemand_text": _CT_ONDEMAND_JS, "created_at": time.time() - age, **extra}
+    Path(TwitterClient._ct_cache_path()).parent.mkdir(parents=True, exist_ok=True)
+    Path(TwitterClient._ct_cache_path()).write_text(json.dumps(payload), encoding="utf-8")
+
+
+class TestClientTransactionRefreshFailures:
+    @patch("twitter_cli.client._get_cffi_session")
+    def test_challenge_falls_back_to_the_cached_snapshot(self, mock_session, caplog):
+        mock_session.return_value.get.return_value = _challenge_page()
+        client = _bare_client()
+        client._load_ct_cache = MagicMock(side_effect=[False, True])
+
+        with caplog.at_level("INFO", logger="twitter_cli.client"):
+            client._ensure_client_transaction()
+
+        assert mock_session.return_value.get.call_count == 1
+        assert client._load_ct_cache.call_args_list[1].kwargs == {"allow_stale": True}
+        assert not [record for record in caplog.records if record.levelname == "WARNING"]
+        assert "Cloudflare challenge" in caplog.text
+
+    @patch("twitter_cli.client._get_cffi_session")
+    def test_challenge_without_cache_warns_with_the_reason(self, mock_session, caplog):
+        mock_session.return_value.get.return_value = _challenge_page()
+        client = _bare_client()
+
+        with caplog.at_level("WARNING", logger="twitter_cli.client"):
+            client._ensure_client_transaction()
+
+        assert client._client_transaction is None
+        assert "x.com/home answered HTTP 403 with a Cloudflare challenge" in caplog.text
+
+    @patch("twitter_cli.client._update_features_from_html")
+    @patch("twitter_cli.client.ClientTransaction")
+    def test_stale_snapshot_is_used_only_after_a_failed_refresh(self, mock_tx, mock_features):
+        _write_ct_cache(age=7200)
+        client = _bare_client()
+
+        assert client._load_ct_cache() is False
+        assert client._load_ct_cache(allow_stale=True) is True
+
+        client._mark_ct_refresh_failed()
+
+        assert client._load_ct_cache() is True
+
+    @patch("twitter_cli.client._update_features_from_html")
+    @patch("twitter_cli.client.ClientTransaction")
+    def test_snapshot_older_than_a_day_is_never_used(self, mock_tx, mock_features):
+        import time
+
+        _write_ct_cache(age=2 * 86400, refresh_failed_at=time.time())
+        client = _bare_client()
+
+        assert client._load_ct_cache() is False
+        assert client._load_ct_cache(allow_stale=True) is False
+        mock_tx.assert_not_called()
