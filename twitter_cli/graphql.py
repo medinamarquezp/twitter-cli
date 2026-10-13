@@ -57,6 +57,10 @@ FALLBACK_QUERY_IDS = {
     "TweetResultByRestId": "tCVRZ3WCvoj0BVO7BKnL-Q",
     "BookmarkFoldersSlice": "i78YDd0Tza-dV4SYs58kRg",
     "BookmarkFolderTimeline": "hNY7X2xE2N7HVF6Qb_mu6w",
+    "UserTweetsAndReplies": "D5eKzDa5ZoJuC1TCeAXbWA",
+    "Retweeters": "TZsWuSj7vGmncVnq7KWDUQ",
+    "ListMembers": "oIetCo19avgStX4mOnGsPg",
+    "CombinedLists": "ulFO9MUgZ5uJP_2l7cKciA",
 }
 
 # ── Default feature flags ────────────────────────────────────────────────

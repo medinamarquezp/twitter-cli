@@ -10,7 +10,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from .models import Tweet, UserProfile
+from .models import Tweet, TwitterList, UserProfile
 from .timeutil import format_local_time, format_relative_time
 
 
@@ -321,5 +321,32 @@ def print_user_table(
         )
 
         table.add_row(str(i + 1), user_text, bio, stats)
+
+    console.print(table)
+
+
+def print_list_table(
+    items: List[TwitterList],
+    console: Optional[Console] = None,
+    title: Optional[str] = None,
+) -> None:
+    if console is None:
+        console = _make_console()
+
+    table = Table(title=title or "📋 Lists — %d" % len(items), show_lines=True, expand=True)
+    table.add_column("#", style="dim", width=3, justify="right")
+    table.add_column("List", style="cyan", ratio=2)
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Members", style="green", justify="right", no_wrap=True)
+
+    for i, item in enumerate(items):
+        privacy = " 🔒" if item.is_private else ""
+        owner = "\n@%s" % item.owner_screen_name if item.owner_screen_name else ""
+        table.add_row(
+            str(i + 1),
+            "%s%s%s" % (item.name, privacy, owner),
+            item.id,
+            format_number(item.member_count),
+        )
 
     console.print(table)

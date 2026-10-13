@@ -48,10 +48,11 @@ from .graphql import (
     _resolve_query_id,
     _update_features_from_html,
 )
-from .models import BookmarkFolder, UserProfile
+from .models import BookmarkFolder, TwitterList, UserProfile
 from .parser import (
     _deep_get,
     _parse_int,
+    parse_list_result,
     parse_timeline_response,
     parse_tweet_result,
     parse_user_result,
@@ -175,6 +176,39 @@ def _created_tweet_result(data):
         or _deep_get(data, "data", "notetweet_create", "tweet_results", "result")
         or _deep_get(data, "data", "create_note_tweet", "tweet_results", "result")
     )
+
+
+def _parse_user_item(item_content: Dict[str, Any]) -> Optional[UserProfile]:
+    user_results = _deep_get(item_content, "user_results", "result")
+    return parse_user_result(user_results) if user_results else None
+
+
+def _parse_list_item(item_content: Dict[str, Any]) -> Optional[TwitterList]:
+    return parse_list_result(item_content.get("list"))
+
+
+def _parse_item_entries(
+    instructions: List[Dict[str, Any]],
+    parse_item: Callable[[Dict[str, Any]], Any],
+) -> Tuple[List[Any], Optional[str]]:
+    items: List[Any] = []
+    next_cursor: Optional[str] = None
+    for instruction in instructions:
+        for entry in instruction.get("entries", []):
+            content = entry.get("content", {})
+            entry_type = content.get("entryType", "")
+            if entry_type == "TimelineTimelineItem":
+                item = parse_item(content.get("itemContent", {}))
+                if item:
+                    items.append(item)
+            elif entry_type == "TimelineTimelineModule":
+                for module_item in content.get("items", []):
+                    item = parse_item(_deep_get(module_item, "item", "itemContent") or {})
+                    if item:
+                        items.append(item)
+            elif entry_type == "TimelineTimelineCursor" and content.get("cursorType") == "Bottom":
+                next_cursor = content.get("value")
+    return items, next_cursor
 
 
 # ── TwitterClient ────────────────────────────────────────────────────────
@@ -536,6 +570,51 @@ class TwitterClient:
             start_cursor=cursor,
             return_cursor=return_cursor,
         )
+
+    def fetch_retweeters(self, tweet_id: str, count: int = 20, cursor: Optional[str] = None, return_cursor: bool = False) -> Any:
+        return self._fetch_item_list(
+            "Retweeters",
+            {"tweetId": tweet_id, "includePromotedContent": False},
+            count,
+            lambda data: _deep_get(data, "data", "retweeters_timeline", "timeline", "instructions"),
+            _parse_user_item,
+            start_cursor=cursor,
+            return_cursor=return_cursor,
+        )
+
+    def fetch_list_members(self, list_id: str, count: int = 20, cursor: Optional[str] = None, return_cursor: bool = False) -> Any:
+        return self._fetch_item_list(
+            "ListMembers",
+            {"listId": list_id},
+            count,
+            lambda data: _deep_get(data, "data", "list", "members_timeline", "timeline", "instructions"),
+            _parse_user_item,
+            start_cursor=cursor,
+            return_cursor=return_cursor,
+        )
+
+    def fetch_lists(self, user_id: str, count: int = 20, cursor: Optional[str] = None, return_cursor: bool = False) -> Any:
+        return self._fetch_item_list(
+            "CombinedLists",
+            {"userId": user_id},
+            count,
+            lambda data: _deep_get(data, "data", "user", "result", "timeline", "timeline", "instructions"),
+            _parse_list_item,
+            start_cursor=cursor,
+            return_cursor=return_cursor,
+        )
+
+    def fetch_mentions(self, screen_name: str, count: int = 20, cursor: Optional[str] = None, return_cursor: bool = False) -> Any:
+        query = "@%s -from:%s" % (screen_name, screen_name)
+        return self.fetch_search(query, count, "Latest", cursor=cursor, return_cursor=return_cursor)
+
+    def fetch_conversation(self, tweet_id: str, count: int = 20, cursor: Optional[str] = None, return_cursor: bool = False) -> Any:
+        query = "conversation_id:%s" % tweet_id
+        return self.fetch_search(query, count, "Latest", cursor=cursor, return_cursor=return_cursor)
+
+    def fetch_quotes(self, tweet_id: str, count: int = 20, cursor: Optional[str] = None, return_cursor: bool = False) -> Any:
+        query = "quoted_tweet_id:%s" % tweet_id
+        return self.fetch_search(query, count, "Latest", cursor=cursor, return_cursor=return_cursor)
 
     # ── Write operations ─────────────────────────────────────────────
 
@@ -906,23 +985,41 @@ class TwitterClient:
     def _fetch_user_list(self, operation_name, user_id, count, get_instructions, use_post=False, start_cursor=None, return_cursor=False):
         # type: (str, str, int, Callable[[Any], Any], bool, Optional[str], bool) -> Any
         """Generic user list fetcher (for followers/following) with pagination."""
+        return self._fetch_item_list(
+            operation_name,
+            {"userId": user_id, "includePromotedContent": False},
+            count,
+            get_instructions,
+            _parse_user_item,
+            use_post=use_post,
+            start_cursor=start_cursor,
+            return_cursor=return_cursor,
+        )
+
+    def _fetch_item_list(
+        self,
+        operation_name: str,
+        base_variables: Dict[str, Any],
+        count: int,
+        get_instructions: Callable[[Any], Any],
+        parse_item: Callable[[Dict[str, Any]], Any],
+        use_post: bool = False,
+        start_cursor: Optional[str] = None,
+        return_cursor: bool = False,
+    ) -> Any:
         if count <= 0:
             return ([], None) if return_cursor else []
         count = min(count, self._max_count)
-        users = []  # type: List[UserProfile]
-        seen_ids = set()  # type: Set[str]
-        cursor = start_cursor  # type: Optional[str]
-        continuation_cursor = None  # type: Optional[str]
+        items: List[Any] = []
+        seen_ids: Set[str] = set()
+        cursor = start_cursor
+        continuation_cursor: Optional[str] = None
         attempts = 0
         max_attempts = int(math.ceil(count / 20.0)) + 2
 
-        while len(users) < count and attempts < max_attempts:
+        while len(items) < count and attempts < max_attempts:
             attempts += 1
-            variables = {
-                "userId": user_id,
-                "count": min(count - len(users) + 5, 40),
-                "includePromotedContent": False,
-            }  # type: Dict[str, Any]
+            variables = dict(base_variables, count=min(count - len(items) + 5, 40))
             if cursor:
                 variables["cursor"] = cursor
 
@@ -932,52 +1029,35 @@ class TwitterClient:
                 data = self._graphql_get(operation_name, variables, FEATURES)
             instructions = get_instructions(data)
             if not instructions:
-                logger.warning("No user list instructions found")
+                logger.warning("No %s instructions found", operation_name)
                 break
 
-            new_users = []  # type: List[UserProfile]
-            next_cursor = None  # type: Optional[str]
-            for instruction in instructions:
-                entries = instruction.get("entries", [])
-                for entry in entries:
-                    content = entry.get("content", {})
-                    entry_type = content.get("entryType", "")
+            new_items, next_cursor = _parse_item_entries(instructions, parse_item)
 
-                    if entry_type == "TimelineTimelineItem":
-                        item = content.get("itemContent", {})
-                        user_results = _deep_get(item, "user_results", "result")
-                        if user_results:
-                            user = parse_user_result(user_results)
-                            if user:
-                                new_users.append(user)
-                    elif entry_type == "TimelineTimelineCursor":
-                        if content.get("cursorType") == "Bottom":
-                            next_cursor = content.get("value")
-
-            for user in new_users:
-                if user.id and user.id not in seen_ids:
-                    seen_ids.add(user.id)
-                    users.append(user)
+            for item in new_items:
+                if item.id and item.id not in seen_ids:
+                    seen_ids.add(item.id)
+                    items.append(item)
 
             if not next_cursor:
                 continuation_cursor = None
                 break
             if next_cursor == cursor:
-                logger.debug("User list pagination stopped because cursor did not advance: %s", next_cursor)
+                logger.debug("%s pagination stopped because cursor did not advance: %s", operation_name, next_cursor)
                 continuation_cursor = None
                 break
             continuation_cursor = next_cursor
             cursor = next_cursor
 
-            if not new_users:
-                logger.debug("User list page returned no users but exposed next cursor; continuing pagination")
+            if not new_items:
+                logger.debug("%s page returned no items but exposed next cursor; continuing", operation_name)
 
-            if len(users) < count and self._request_delay > 0:
+            if len(items) < count and self._request_delay > 0:
                 time.sleep(self._request_delay * random.uniform(0.7, 1.5))
 
         if return_cursor:
-            return users, continuation_cursor
-        return users[:count]
+            return items, continuation_cursor
+        return items[:count]
 
     # ── Internal: GraphQL request methods ────────────────────────────
 

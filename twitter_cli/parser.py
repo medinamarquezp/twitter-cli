@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Any, Callable, Dict, List, Optional, Tuple  # noqa: F401
 
-from .models import Author, Metrics, Tweet, TweetMedia, UserProfile
+from .models import Author, Metrics, Tweet, TweetMedia, TwitterList, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -403,6 +403,26 @@ def parse_user_result(user_data):
         verified=user_data.get("is_blue_verified", False) or legacy.get("verified", False),
         profile_image_url=avatar.get("image_url") or legacy.get("profile_image_url_https", ""),
         created_at=core.get("created_at") or legacy.get("created_at", ""),
+    )
+
+
+def parse_list_result(list_data: Any) -> Optional[TwitterList]:
+    if not isinstance(list_data, dict):
+        return None
+    list_id = str(list_data.get("id_str") or list_data.get("rest_id") or list_data.get("id") or "")
+    if not list_id:
+        return None
+    owner = _deep_get(list_data, "user_results", "result") or {}
+    owner_screen_name = _deep_get(owner, "core", "screen_name") or _deep_get(owner, "legacy", "screen_name") or ""
+    return TwitterList(
+        id=list_id,
+        name=str(list_data.get("name") or ""),
+        description=str(list_data.get("description") or ""),
+        member_count=_parse_int(list_data.get("member_count"), 0),
+        subscriber_count=_parse_int(list_data.get("subscriber_count"), 0),
+        is_private=str(list_data.get("mode") or "").lower() == "private",
+        owner_screen_name=str(owner_screen_name),
+        created_at=str(list_data.get("created_at") or ""),
     )
 
 

@@ -57,6 +57,7 @@ from .formatter import (
     print_filter_stats,
     print_article,
     print_tweet_detail,
+    print_list_table,
     print_tweet_table,
     print_user_profile,
     print_user_table,
@@ -78,6 +79,7 @@ from .serialization import (
     tweets_to_data,
     tweets_to_compact_json,
     tweets_to_json,
+    twitter_lists_to_data,
     user_profile_to_dict,
     users_to_data,
 )
@@ -1104,14 +1106,95 @@ def _fetch_and_display_users(
     except (TwitterError, RuntimeError) as exc:
         _exit_with_error(exc)
 
+    _emit_users(users, next_cursor, "👥 @%s %s — %d" % (screen_name, label, len(users)), as_json, as_yaml)
+
+
+def _emit_users(
+    users: List[UserProfile],
+    next_cursor: Optional[str],
+    title: str,
+    as_json: bool,
+    as_yaml: bool,
+) -> None:
     payload = success_payload(users_to_data(users))
     if next_cursor:
         payload["pagination"] = {"nextCursor": next_cursor}
     if emit_structured(payload, as_json=as_json, as_yaml=as_yaml):
         return
 
-    print_user_table(users, console, title="👥 @%s %s — %d" % (screen_name, label, len(users)))
+    print_user_table(users, console, title=title)
     console.print()
+
+
+def _normalize_screen_name(value: str) -> str:
+    candidate = value.strip().lstrip("@")
+    if not re.fullmatch(r"[A-Za-z0-9_]{1,15}", candidate):
+        raise RuntimeError("Invalid screen name: %s" % value)
+    return candidate
+
+
+def _normalize_list_id(value: str) -> str:
+    raw = value.strip().rstrip("/")
+    match = re.search(r"/lists/(\d+)$", urllib.parse.urlparse(raw).path)
+    candidate = match.group(1) if match else raw
+    if not candidate.isdigit():
+        raise RuntimeError("Invalid list ID: %s" % value)
+    return candidate
+
+
+def _screen_name_or_me(client: TwitterClient, screen_name: Optional[str]) -> str:
+    return _normalize_screen_name(screen_name) if screen_name else client.fetch_me().screen_name
+
+
+def _run_tweet_search_command(
+    ctx: Any,
+    resolve_subject: Callable[[TwitterClient], str],
+    fetch_name: str,
+    label: str,
+    emoji: str,
+    max_count: Optional[int],
+    cursor: Optional[str],
+    as_json: bool,
+    as_yaml: bool,
+    output_file: Optional[str],
+    full_text: bool,
+) -> None:
+    compact = ctx.obj.get("compact", False)
+    config = load_config()
+
+    def _run():
+        rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml, compact=compact)
+        client = _get_client(config, quiet=not rich_output)
+        subject = resolve_subject(client)
+        fetch = getattr(client, fetch_name)
+        _fetch_and_display(
+            lambda count: fetch(subject, count, cursor=cursor, return_cursor=True),
+            label % subject, emoji, max_count, as_json, as_yaml, output_file, False, config,
+            compact=compact, full_text=full_text,
+        )
+
+    _run_guarded(_run)
+
+
+def _fetch_and_display_user_page(
+    fetch: Callable[[TwitterClient, int], Any],
+    label: str,
+    max_count: Optional[int],
+    as_json: bool,
+    as_yaml: bool,
+) -> None:
+    config = load_config()
+    rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml)
+
+    def _run():
+        client = _get_client(config, quiet=not rich_output)
+        fetch_count = _resolve_configured_count(config, max_count)
+        if rich_output:
+            console.print("👥 Fetching %s (%d)...\n" % (label, fetch_count))
+        users, next_cursor = fetch(client, fetch_count)
+        _emit_users(users, next_cursor, "👥 %s — %d" % (label, len(users)), as_json, as_yaml)
+
+    _run_guarded(_run)
 
 
 @cli.command()
@@ -1134,6 +1217,147 @@ def following(screen_name, max_count, cursor, as_json, as_yaml):
     # type: (str, int, Optional[str], bool, bool) -> None
     """List accounts a user is following. SCREEN_NAME is the @handle (without @)."""
     _fetch_and_display_users(screen_name, "fetch_following", "following", max_count, as_json, as_yaml, cursor)
+
+
+@cli.command()
+@click.argument("screen_name", required=False)
+@click.option("--max", "-n", "max_count", type=int, default=None, help="Max number of tweets to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous mentions request.")
+@structured_output_options
+@click.option("--output", "-o", "output_file", type=str, default=None, help="Save tweets to JSON file.")
+@click.option("--full-text", is_flag=True, help="Show full tweet text in table output.")
+@click.pass_context
+def mentions(ctx, screen_name, max_count, cursor, as_json, as_yaml, output_file, full_text):
+    """Latest posts that mention a user, without the user's own posts.
+
+    SCREEN_NAME is the @handle (without @). It defaults to the logged-in
+    account, which costs two extra requests to look it up.
+    """
+    _run_tweet_search_command(
+        ctx,
+        lambda client: _screen_name_or_me(client, screen_name),
+        "fetch_mentions",
+        "@%s mentions",
+        "📣",
+        max_count,
+        cursor,
+        as_json,
+        as_yaml,
+        output_file,
+        full_text,
+    )
+
+
+@cli.command()
+@click.argument("tweet_id")
+@click.option("--max", "-n", "max_count", type=int, default=None, help="Max number of tweets to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous conversation request.")
+@structured_output_options
+@click.option("--output", "-o", "output_file", type=str, default=None, help="Save tweets to JSON file.")
+@click.option("--full-text", is_flag=True, help="Show full tweet text in table output.")
+@click.pass_context
+def conversation(ctx, tweet_id, max_count, cursor, as_json, as_yaml, output_file, full_text):
+    """Every post in a conversation, newest first. TWEET_ID is the root ID or URL."""
+    _run_tweet_search_command(
+        ctx,
+        lambda client: _normalize_tweet_id(tweet_id),
+        "fetch_conversation",
+        "conversation %s",
+        "🧵",
+        max_count,
+        cursor,
+        as_json,
+        as_yaml,
+        output_file,
+        full_text,
+    )
+
+
+@cli.command()
+@click.argument("tweet_id")
+@click.option("--max", "-n", "max_count", type=int, default=None, help="Max number of tweets to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous quotes request.")
+@structured_output_options
+@click.option("--output", "-o", "output_file", type=str, default=None, help="Save tweets to JSON file.")
+@click.option("--full-text", is_flag=True, help="Show full tweet text in table output.")
+@click.pass_context
+def quotes(ctx, tweet_id, max_count, cursor, as_json, as_yaml, output_file, full_text):
+    """Posts that quote a tweet, newest first. TWEET_ID is the numeric ID or URL."""
+    _run_tweet_search_command(
+        ctx,
+        lambda client: _normalize_tweet_id(tweet_id),
+        "fetch_quotes",
+        "quotes of %s",
+        "💬",
+        max_count,
+        cursor,
+        as_json,
+        as_yaml,
+        output_file,
+        full_text,
+    )
+
+
+@cli.command()
+@click.argument("tweet_id")
+@click.option("--max", "-n", "max_count", type=int, default=None, help="Max users to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous retweeters request.")
+@structured_output_options
+def retweeters(tweet_id, max_count, cursor, as_json, as_yaml):
+    """List accounts that reposted a tweet. TWEET_ID is the numeric ID or URL."""
+    _fetch_and_display_user_page(
+        lambda client, count: client.fetch_retweeters(
+            _normalize_tweet_id(tweet_id), count, cursor=cursor, return_cursor=True,
+        ),
+        "reposts of %s" % tweet_id,
+        max_count,
+        as_json,
+        as_yaml,
+    )
+
+
+@cli.command(name="lists")
+@click.argument("screen_name", required=False)
+@click.option("--max", "-n", "max_count", type=int, default=None, help="Max lists to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous lists request.")
+@structured_output_options
+def lists_command(screen_name, max_count, cursor, as_json, as_yaml):
+    """Show the lists a user owns or follows. SCREEN_NAME defaults to you."""
+    config = load_config()
+    rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml)
+
+    def _run():
+        client = _get_client(config, quiet=not rich_output)
+        profile = client.fetch_user(_normalize_screen_name(screen_name)) if screen_name else client.fetch_me()
+        fetch_count = _resolve_configured_count(config, max_count)
+        items, next_cursor = client.fetch_lists(profile.id, fetch_count, cursor=cursor, return_cursor=True)
+        payload = success_payload(twitter_lists_to_data(items))
+        if next_cursor:
+            payload["pagination"] = {"nextCursor": next_cursor}
+        if emit_structured(payload, as_json=as_json, as_yaml=as_yaml):
+            return
+        print_list_table(items, console, title="📋 @%s lists — %d" % (profile.screen_name, len(items)))
+        console.print()
+
+    _run_guarded(_run)
+
+
+@cli.command(name="list-members")
+@click.argument("list_id")
+@click.option("--max", "-n", "max_count", type=int, default=None, help="Max users to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous list-members request.")
+@structured_output_options
+def list_members(list_id, max_count, cursor, as_json, as_yaml):
+    """List the members of a Twitter List. LIST_ID is the numeric ID or URL."""
+    _fetch_and_display_user_page(
+        lambda client, count: client.fetch_list_members(
+            _normalize_list_id(list_id), count, cursor=cursor, return_cursor=True,
+        ),
+        "members of list %s" % list_id,
+        max_count,
+        as_json,
+        as_yaml,
+    )
 
 
 # ── Write commands ──────────────────────────────────────────────────────

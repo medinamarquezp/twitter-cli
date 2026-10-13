@@ -85,3 +85,15 @@ class UserProfile:
     verified: bool = False
     profile_image_url: str = ""
     created_at: str = ""
+
+
+@dataclass
+class TwitterList:
+    id: str
+    name: str
+    description: str = ""
+    member_count: int = 0
+    subscriber_count: int = 0
+    is_private: bool = False
+    owner_screen_name: str = ""
+    created_at: str = ""

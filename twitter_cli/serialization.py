@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Iterable, List, Optional
 
-from .models import Author, BookmarkFolder, Metrics, Tweet, TweetMedia, UserProfile
+from .models import Author, BookmarkFolder, Metrics, Tweet, TweetMedia, TwitterList, UserProfile
 from .timeutil import format_iso8601, format_local_time
 
 
@@ -251,6 +251,23 @@ def users_to_json(users: Iterable[UserProfile]) -> str:
 def users_to_data(users: Iterable[UserProfile]) -> List[Dict[str, Any]]:
     """Serialize UserProfile objects to Python dicts."""
     return [user_profile_to_dict(user) for user in users]
+
+
+def twitter_list_to_dict(item: TwitterList) -> Dict[str, Any]:
+    return {
+        "id": item.id,
+        "name": item.name,
+        "description": item.description,
+        "memberCount": item.member_count,
+        "subscriberCount": item.subscriber_count,
+        "isPrivate": item.is_private,
+        "ownerScreenName": item.owner_screen_name,
+        "createdAt": item.created_at,
+    }
+
+
+def twitter_lists_to_data(items: Iterable[TwitterList]) -> List[Dict[str, Any]]:
+    return [twitter_list_to_dict(item) for item in items]
 
 
 def _optional_int(value: Any) -> Optional[int]:
