@@ -11,7 +11,7 @@ This fork of [public-clis/twitter-cli](https://github.com/public-clis/twitter-cl
 ## Install
 
 ```bash
-uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.4
+uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.5
 ```
 
 ## Integrated upstream pull requests
@@ -53,11 +53,14 @@ uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.4
 | `0.8.6+fork.3` | Handles, tweet IDs and list IDs are validated before they are used, so arguments cannot inject search operators |
 | `0.8.6+fork.3` | A Bottom cursor nested inside a timeline item is now followed |
 | `0.8.6+fork.4` | Native scheduling: `schedule TEXT --at TIME [-i IMAGE]` (`CreateScheduledTweet`; X publishes the post even when this machine is off), `scheduled` (`FetchScheduledTweets`) and `unschedule ID` (`DeleteScheduledTweet`). `--at` takes ISO 8601, local time without an offset, at least five minutes ahead. `scheduled` is verified against X; `schedule` and `unschedule` are covered by tests but not yet exercised against a live account |
+| `0.8.6+fork.5` | `refresh-query-ids [--quick]`: scans the logged-in x.com web build (`main.js`, `vendor.js` and about 540 on-demand chunks, about 25 seconds) and saves every operation found to `~/.twitter-cli/web_query_ids.json`; `--quick` stops once the fork's operations are found. These IDs are used only for operations without a built-in ID or after an ID is rejected, so working IDs are never replaced, and a rejected ID is never handed back |
+| `0.8.6+fork.5` | The automatic bundle scan reads the cached logged-in page (`main.js` and `vendor.js`) instead of the logged-out shell, which links no operation, and keeps its findings apart from the main cache |
+
+Live web IDs also explained the list `DecodeException`: the twitter-openapi IDs for `CombinedLists`, `ListsManagementPageTimeline` and `ListOwnerships` no longer match the ones the web uses.
 
 ## Planned fork work
 
 - A stable JSON schema for every command.
-- Fix the bundle scan for live query IDs. It reads the logged-out `https://x.com` page, which only links the `x-web` logged-out entry, so it finds no operation. The logged-in `x.com/home` page links `responsive-web/client-web/main.*.js` (about 100 operations) and a chunk map of about 540 on-demand chunks (`name.hasha.js`) where the rest live, such as the scheduling operations in `bundle.ComposeGrokMedia`. Scanning every chunk is too many requests, so it should run as an explicit refresh command that persists every operation found.
 
 ## Testing
 
