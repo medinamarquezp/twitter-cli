@@ -179,7 +179,7 @@ def refresh_web_query_ids(
     home_html: str,
     url_fetch_fn: Callable[[str], str],
     wanted: Iterable[str],
-    scan_all: bool = False,
+    quick: bool = False,
     chunk_limit: int = WEB_SCAN_CHUNK_LIMIT,
 ) -> Dict[str, Any]:
     entries, chunks = web_bundle_urls(home_html)
@@ -194,7 +194,7 @@ def refresh_web_query_ids(
         scanned += 1
     scanned_chunks = 0
     for url in prioritized_chunk_urls(chunks, wanted_set - set(found)):
-        if not scan_all and (wanted_set <= set(found) or scanned_chunks >= chunk_limit):
+        if quick and (wanted_set <= set(found) or scanned_chunks >= chunk_limit):
             break
         try:
             script = url_fetch_fn(url)

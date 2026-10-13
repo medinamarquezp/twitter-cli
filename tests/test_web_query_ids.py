@@ -57,7 +57,7 @@ def test_chunks_sharing_words_with_missing_operations_go_first() -> None:
 def test_refresh_stops_once_every_wanted_operation_is_found() -> None:
     fetched: list[str] = []
 
-    result = graphql.refresh_web_query_ids(HOME_HTML, _fetcher(fetched), ["UserTweets", "ListMembers"])
+    result = graphql.refresh_web_query_ids(HOME_HTML, _fetcher(fetched), ["UserTweets", "ListMembers"], quick=True)
 
     assert result["queryIds"]["UserTweets"] == "web-user-tweets"
     assert result["queryIds"]["ListMembers"] == "web-members"
@@ -68,10 +68,10 @@ def test_refresh_stops_once_every_wanted_operation_is_found() -> None:
     assert stat.S_IMODE(graphql.WEB_QUERY_ID_FILE.stat().st_mode) == 0o600
 
 
-def test_refresh_all_scans_every_chunk_and_reports_missing() -> None:
+def test_refresh_scans_every_chunk_by_default_and_reports_missing() -> None:
     fetched: list[str] = []
 
-    result = graphql.refresh_web_query_ids(HOME_HTML, _fetcher(fetched), ["UserTweets", "Unknown"], scan_all=True)
+    result = graphql.refresh_web_query_ids(HOME_HTML, _fetcher(fetched), ["UserTweets", "Unknown"])
 
     assert len(fetched) == len(SCRIPTS)
     assert result["queryIds"]["ExplorePage"] == "web-explore"
@@ -131,7 +131,7 @@ def test_refresh_command_reports_changed_and_missing_ids(monkeypatch) -> None:
     monkeypatch.setattr("twitter_cli.cli._get_client", lambda config=None, quiet=False: fake)
     monkeypatch.setattr("twitter_cli.cli._url_fetch", _fetcher([]))
 
-    result = CliRunner().invoke(cli, ["refresh-query-ids", "--all", "--json"])
+    result = CliRunner().invoke(cli, ["refresh-query-ids", "--json"])
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)["data"]
