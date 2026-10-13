@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/medinamarquezp/twitter-cli/blob/integration/schema/twitter-cli.schema.json",
+  "$id": "https://github.com/medinamarquezp/twitter-cli/blob/main/schema/twitter-cli.schema.json",
   "title": "twitter-cli structured output",
   "description": "Envelopes and data shapes printed with --json or --yaml (schema_version 1). SCHEMA.md maps every command to its envelope.",
   "$defs": {

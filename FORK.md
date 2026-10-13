@@ -4,8 +4,7 @@ This fork of [public-clis/twitter-cli](https://github.com/public-clis/twitter-cl
 
 ## Branches and tags
 
-- `main` mirrors `upstream/main` and carries no fork-specific commits.
-- `integration` is upstream `main` plus the pull requests listed below, each merged with `--no-ff` so it can be reverted on its own, plus the fork's own work.
+- `main` is upstream `main` plus the pull requests listed below, each merged with `--no-ff` so it can be reverted on its own, plus the fork's own work. Upstream changes come in by merging `upstream/main` into `main`.
 - Releases are tagged `v<upstream version>-fork.<n>`, and the package version is `<upstream version>+fork.<n>`.
 
 ## Install
