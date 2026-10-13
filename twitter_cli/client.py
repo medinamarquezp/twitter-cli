@@ -42,6 +42,7 @@ from .exceptions import (
 )
 from .graphql import (
     FEATURES,
+    TRANSACTION_CACHE_FILE,
     _build_graphql_url,
     _invalidate_query_id,
     operation_features,
@@ -58,7 +59,7 @@ from .parser import (
     parse_tweet_result,
     parse_user_result,
 )
-from .private_files import STATE_DIR, write_private_text
+from .private_files import write_private_text
 from .text import CREATE_NOTE_TWEET_OPERATION, tweet_create_route
 
 if TYPE_CHECKING:
@@ -1236,7 +1237,15 @@ class TwitterClient:
     def _ct_cache_path():
         # type: () -> str
         """Return path for transaction cache file."""
-        return str(STATE_DIR / "transaction_cache.json")
+        return str(TRANSACTION_CACHE_FILE)
+
+    def cached_home_html(self) -> str:
+        try:
+            cache = json.loads(Path(self._ct_cache_path()).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return ""
+        home_html = cache.get("home_html") if isinstance(cache, dict) else None
+        return home_html if isinstance(home_html, str) else ""
 
     def _load_ct_cache(self):
         # type: () -> bool

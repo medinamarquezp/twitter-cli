@@ -14,7 +14,7 @@ import urllib.parse
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import Any, Dict, Optional  # noqa: F401
+    from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple  # noqa: F401
 
 from .exceptions import QueryIdError
 from .private_files import STATE_DIR, write_private_text
@@ -103,11 +103,123 @@ NOTE_TWEET_FEATURES = {
 
 # Module-level caches (not thread-safe — CLI is single-threaded)
 _cached_query_ids: Dict[str, str] = {}
+_scanned_query_ids: Dict[str, str] = {}
+_rejected_query_ids: Dict[str, Set[str]] = {}
 _bundles_scanned = False
 
 QUERY_ID_CACHE_FILE = STATE_DIR / "query_ids.json"
 QUERY_ID_CACHE_TTL = 30 * 24 * 3600
 _persisted_query_ids: Optional[Dict[str, Dict[str, Any]]] = None
+
+WEB_QUERY_ID_FILE = STATE_DIR / "web_query_ids.json"
+TRANSACTION_CACHE_FILE = STATE_DIR / "transaction_cache.json"
+_web_query_ids: Optional[Dict[str, str]] = None
+
+_OPERATION_PATTERN = re.compile(r'queryId:\s*"([A-Za-z0-9_-]+)"[^}]{0,200}operationName:\s*"([^"]+)"')
+_WEB_ENTRY_PATTERN = re.compile(r"https://abs\.twimg\.com/responsive-web/client-web/(?:main|vendor)\.[0-9a-f]+\.js")
+_CHUNK_ENTRY_PATTERN = re.compile(r'[,{](\d+):"([A-Za-z0-9_.~\-]+)"')
+_CHUNK_URL = "https://abs.twimg.com/responsive-web/client-web/%s.%sa.js"
+WEB_SCAN_CHUNK_LIMIT = 150
+
+
+def find_query_ids(script: str) -> Dict[str, str]:
+    found: Dict[str, str] = {}
+    for query_id, operation_name in _OPERATION_PATTERN.findall(script):
+        found.setdefault(operation_name, query_id)
+    return found
+
+
+def web_bundle_urls(home_html: str) -> Tuple[List[str], Dict[str, str]]:
+    entries = sorted(set(_WEB_ENTRY_PATTERN.findall(home_html)), key=lambda url: "/main." not in url)
+    names: Dict[str, str] = {}
+    hashes: Dict[str, str] = {}
+    for chunk_id, value in _CHUNK_ENTRY_PATTERN.findall(home_html):
+        if re.fullmatch(r"[0-9a-f]{6,}", value):
+            hashes[chunk_id] = value
+        else:
+            names[chunk_id] = value
+    chunks = {names[key]: _CHUNK_URL % (names[key], hashes[key]) for key in names if key in hashes}
+    return entries, chunks
+
+
+def prioritized_chunk_urls(chunks: Dict[str, str], wanted: Iterable[str]) -> List[str]:
+    words = {word for name in wanted for word in re.findall(r"[A-Z][a-z]+", name) if len(word) > 3}
+
+    def rank(name: str) -> Tuple[int, str]:
+        return (-sum(1 for word in words if word in name), name)
+
+    return [chunks[name] for name in sorted(chunks, key=rank)]
+
+
+def _load_web_query_ids() -> Dict[str, str]:
+    global _web_query_ids
+    if _web_query_ids is not None:
+        return _web_query_ids
+    _web_query_ids = {}
+    try:
+        payload = json.loads(WEB_QUERY_ID_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return _web_query_ids
+    query_ids = payload.get("queryIds") if isinstance(payload, dict) else None
+    if isinstance(query_ids, dict):
+        _web_query_ids.update(
+            {name: value for name, value in query_ids.items() if isinstance(name, str) and isinstance(value, str) and value}
+        )
+    return _web_query_ids
+
+
+def save_web_query_ids(query_ids: Dict[str, str]) -> None:
+    global _web_query_ids
+    payload = {"scannedAt": time.time(), "queryIds": dict(sorted(query_ids.items()))}
+    write_private_text(WEB_QUERY_ID_FILE, json.dumps(payload, indent=2))
+    _web_query_ids = dict(query_ids)
+
+
+def refresh_web_query_ids(
+    home_html: str,
+    url_fetch_fn: Callable[[str], str],
+    wanted: Iterable[str],
+    scan_all: bool = False,
+    chunk_limit: int = WEB_SCAN_CHUNK_LIMIT,
+) -> Dict[str, Any]:
+    entries, chunks = web_bundle_urls(home_html)
+    if not entries:
+        raise QueryIdError("The logged-in x.com page links no web build; renew the session and retry")
+    wanted_set = set(wanted)
+    found: Dict[str, str] = {}
+    scanned = 0
+    for url in entries:
+        for name, query_id in find_query_ids(url_fetch_fn(url)).items():
+            found.setdefault(name, query_id)
+        scanned += 1
+    scanned_chunks = 0
+    for url in prioritized_chunk_urls(chunks, wanted_set - set(found)):
+        if not scan_all and (wanted_set <= set(found) or scanned_chunks >= chunk_limit):
+            break
+        try:
+            script = url_fetch_fn(url)
+        except Exception as exc:
+            logger.debug("Skipping chunk %s: %s", url, exc)
+            continue
+        scanned_chunks += 1
+        for name, query_id in find_query_ids(script).items():
+            found.setdefault(name, query_id)
+    save_web_query_ids(found)
+    return {
+        "scannedScripts": scanned + scanned_chunks,
+        "availableChunks": len(chunks),
+        "queryIds": found,
+        "missing": sorted(wanted_set - set(found)),
+    }
+
+
+def _cached_home_html() -> str:
+    try:
+        cache = json.loads(TRANSACTION_CACHE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    home_html = cache.get("home_html") if isinstance(cache, dict) else None
+    return home_html if isinstance(home_html, str) else ""
 
 
 def _load_persisted_query_ids() -> Dict[str, Dict[str, Any]]:
@@ -180,8 +292,8 @@ def _build_graphql_url(query_id, operation_name, variables, features, field_togg
     return url
 
 
-def _scan_bundles(url_fetch_fn):
-    # type: (Any) -> None
+def _scan_bundles(url_fetch_fn, home_html=""):
+    # type: (Any, str) -> None
     """Scan Twitter JS bundles and cache queryId mappings.
 
     Args:
@@ -191,6 +303,17 @@ def _scan_bundles(url_fetch_fn):
     if _bundles_scanned:
         return
     _bundles_scanned = True
+
+    entries, _ = web_bundle_urls(home_html) if home_html else ([], {})
+    if entries:
+        for url in entries:
+            try:
+                for name, query_id in find_query_ids(url_fetch_fn(url)).items():
+                    _scanned_query_ids.setdefault(name, query_id)
+            except Exception as exc:
+                logger.debug("Failed to scan %s: %s", url, exc)
+        logger.info("Scanned %d logged-in web bundles, found %d query IDs", len(entries), len(_scanned_query_ids))
+        return
 
     try:
         from .constants import get_user_agent
@@ -230,18 +353,12 @@ def _scan_bundles(url_fetch_fn):
 
     for script_url in script_urls:
         try:
-            bundle = url_fetch_fn(script_url)
-            op_pattern = re.compile(
-                r'queryId:\s*"([A-Za-z0-9_-]+)"[^}]{0,200}'
-                r'operationName:\s*"([^"]+)"'
-            )
-            for match in op_pattern.finditer(bundle):
-                query_id, operation_name = match.group(1), match.group(2)
-                _cached_query_ids.setdefault(operation_name, query_id)
+            for operation_name, query_id in find_query_ids(url_fetch_fn(script_url)).items():
+                _scanned_query_ids.setdefault(operation_name, query_id)
         except Exception:
             continue
 
-    logger.info("Scanned %d JS bundles, cached %d query IDs", len(script_urls), len(_cached_query_ids))
+    logger.info("Scanned %d JS bundles, found %d query IDs", len(script_urls), len(_scanned_query_ids))
 
 
 def _update_features_from_html(html):
@@ -291,7 +408,9 @@ def _fetch_from_github(url_fetch_fn, operation_name):
 def _invalidate_query_id(operation_name):
     # type: (str) -> None
     """Remove a cached queryId for an operation."""
-    _cached_query_ids.pop(operation_name, None)
+    rejected = _cached_query_ids.pop(operation_name, None)
+    if rejected:
+        _rejected_query_ids.setdefault(operation_name, set()).add(rejected)
     entries = _load_persisted_query_ids()
     if entries.pop(operation_name, None) is not None:
         _write_persisted_query_ids(entries)
@@ -304,25 +423,30 @@ def _resolve_query_id(operation_name, prefer_fallback=True, url_fetch_fn=None):
     if cached:
         return cached
 
+    rejected = _rejected_query_ids.get(operation_name, set())
     persisted = _load_persisted_query_ids().get(operation_name)
-    if persisted:
+    if persisted and persisted["queryId"] not in rejected:
         _cached_query_ids[operation_name] = persisted["queryId"]
         return persisted["queryId"]
 
     fallback = FALLBACK_QUERY_IDS.get(operation_name)
-    if prefer_fallback and fallback:
+    if prefer_fallback and fallback and fallback not in rejected:
         _cached_query_ids[operation_name] = fallback
         return fallback
 
+    web_query_id = _load_web_query_ids().get(operation_name)
+    if web_query_id and web_query_id not in rejected:
+        return _remember_live_query_id(operation_name, web_query_id)
+
     if url_fetch_fn:
         github_query_id = _fetch_from_github(url_fetch_fn, operation_name)
-        if github_query_id:
+        if github_query_id and github_query_id not in rejected:
             return _remember_live_query_id(operation_name, github_query_id)
 
-        _scan_bundles(url_fetch_fn)
-        cached = _cached_query_ids.get(operation_name)
-        if cached:
-            return _remember_live_query_id(operation_name, cached)
+        _scan_bundles(url_fetch_fn, _cached_home_html())
+        scanned = _scanned_query_ids.get(operation_name)
+        if scanned and scanned not in rejected:
+            return _remember_live_query_id(operation_name, scanned)
 
     if fallback:
         _cached_query_ids[operation_name] = fallback

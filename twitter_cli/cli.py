@@ -50,8 +50,9 @@ from . import __version__
 from .auth import get_cookies
 from .cache import resolve_cached_tweet, save_tweet_cache
 from .exceptions import TwitterError
-from .client import TwitterClient
+from .client import TwitterClient, _url_fetch
 from .config import load_config
+from .graphql import FALLBACK_QUERY_IDS, refresh_web_query_ids
 from .filter import filter_tweets
 from .formatter import (
     article_to_markdown,
@@ -1362,6 +1363,45 @@ def list_members(list_id, max_count, cursor, as_json, as_yaml):
         as_json,
         as_yaml,
     )
+
+
+@cli.command(name="refresh-query-ids")
+@click.option("--all", "scan_all", is_flag=True, help="Scan every on-demand chunk of the web build.")
+@structured_output_options
+def refresh_query_ids(scan_all, as_json, as_yaml):
+    """Refresh GraphQL query IDs from the logged-in x.com web build.
+
+    They are saved in ~/.twitter-cli/web_query_ids.json and used when a
+    built-in ID stops working or an operation has none.
+    """
+    config = load_config()
+    rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml)
+
+    def _run():
+        client = _get_client(config, quiet=not rich_output)
+        if rich_output:
+            console.print("🔎 Scanning the x.com web build...")
+        result = refresh_web_query_ids(client.cached_home_html(), _url_fetch, FALLBACK_QUERY_IDS, scan_all=scan_all)
+        query_ids = result["queryIds"]
+        changed = sorted(
+            name for name, built_in in FALLBACK_QUERY_IDS.items() if name in query_ids and query_ids[name] != built_in
+        )
+        payload = {
+            "scannedScripts": result["scannedScripts"],
+            "availableChunks": result["availableChunks"],
+            "found": len(query_ids),
+            "changed": changed,
+            "missing": result["missing"],
+        }
+        if emit_structured(success_payload(payload), as_json=as_json, as_yaml=as_yaml):
+            return
+        console.print("✅ %d query IDs saved from %d scripts" % (len(query_ids), result["scannedScripts"]))
+        if changed:
+            console.print("🔁 Newer than the built-in IDs: %s" % ", ".join(changed))
+        if result["missing"]:
+            console.print("[yellow]⚠️  Not found: %s[/yellow]" % ", ".join(result["missing"]))
+
+    _run_guarded(_run)
 
 
 # ── Write commands ──────────────────────────────────────────────────────

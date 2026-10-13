@@ -21,6 +21,12 @@ def isolated_state_dir(tmp_path, monkeypatch) -> Path:
     monkeypatch.setattr(cache, "_CACHE_FILE", state_dir / "last_results.json")
     monkeypatch.setattr(graphql, "QUERY_ID_CACHE_FILE", state_dir / "query_ids.json")
     monkeypatch.setattr(graphql, "_persisted_query_ids", None)
+    monkeypatch.setattr(graphql, "WEB_QUERY_ID_FILE", state_dir / "web_query_ids.json")
+    monkeypatch.setattr(graphql, "TRANSACTION_CACHE_FILE", state_dir / "transaction_cache.json")
+    monkeypatch.setattr(graphql, "_web_query_ids", None)
+    monkeypatch.setattr(graphql, "_scanned_query_ids", {})
+    monkeypatch.setattr(graphql, "_rejected_query_ids", {})
+    monkeypatch.setattr(graphql, "_bundles_scanned", False)
     monkeypatch.setattr(
         TwitterClient,
         "_ct_cache_path",
