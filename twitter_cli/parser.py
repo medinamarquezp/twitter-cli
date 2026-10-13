@@ -565,7 +565,8 @@ def parse_timeline_response(data, get_instructions):
         return tweets, next_cursor
 
     for instruction in instructions:
-        entries = instruction.get("entries") or instruction.get("moduleItems") or []
+        pinned = instruction.get("type") == "TimelinePinEntry" and isinstance(instruction.get("entry"), dict)
+        entries = [instruction["entry"]] if pinned else instruction.get("entries") or instruction.get("moduleItems") or []
         for entry in entries:
             content = entry.get("content", {})
             next_cursor = _extract_cursor(content) or next_cursor
@@ -579,6 +580,7 @@ def parse_timeline_response(data, get_instructions):
                         str(entry.get("entryId") or "").startswith("promoted-")
                         or item_content.get("promotedMetadata")
                     )
+                    tweet.is_pinned = pinned
                     tweets.append(tweet)
 
             for nested_item in content.get("items", []):
@@ -599,4 +601,8 @@ def parse_timeline_response(data, get_instructions):
                         )
                         tweets.append(tweet)
 
+    pinned_ids = {tweet.id for tweet in tweets if tweet.is_pinned}
+    if pinned_ids:
+        tweets = [tweet for tweet in tweets if tweet.is_pinned or tweet.id not in pinned_ids]
+        tweets.sort(key=lambda tweet: not tweet.is_pinned)
     return tweets, next_cursor

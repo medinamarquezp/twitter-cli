@@ -148,6 +148,7 @@
         "score": { "type": ["number", "null"] },
         "isSubscriberOnly": { "type": "boolean" },
         "isPromoted": { "type": "boolean" },
+        "isPinned": { "type": "boolean" },
         "articleTitle": { "type": ["string", "null"] },
         "articleText": { "type": ["string", "null"] },
         "quotedTweet": {
@@ -177,6 +178,7 @@
         "score",
         "isSubscriberOnly",
         "isPromoted",
+        "isPinned",
         "articleTitle",
         "articleText",
         "quotedTweet"

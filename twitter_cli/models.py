@@ -56,6 +56,7 @@ class Tweet:
     article_text: Optional[str] = None
     is_subscriber_only: bool = False
     is_promoted: bool = False
+    is_pinned: bool = False
     in_reply_to_id: Optional[str] = None
     in_reply_to_user: Optional[str] = None
     conversation_id: Optional[str] = None

@@ -73,6 +73,7 @@ All IDs are strings. Counts are non-negative integers. Every field listed here i
 | `lang` | string | Language code detected by X |
 | `score` | number or null | Only set with `--filter` |
 | `isSubscriberOnly`, `isPromoted` | boolean | Promoted tweets are dropped unless the command asks for them |
+| `isPinned` | boolean | The profile's pinned tweet, which `user-posts` lists first on the first page; false everywhere else |
 | `articleTitle`, `articleText` | string or null | X Articles only |
 | `quotedTweet` | QuotedTweet or null | `id`, `text`, `author` (`id`, `screenName`, `name`), `metrics`, `createdAt`, `createdAtISO` |
 

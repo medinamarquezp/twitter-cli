@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from twitter_cli.parser import parse_tweet_result
+from twitter_cli.parser import parse_timeline_response, parse_tweet_result
 from twitter_cli.serialization import tweet_from_dict, tweet_to_dict
 
 
@@ -110,3 +110,35 @@ def test_new_fields_round_trip_through_json() -> None:
     assert restored.hashtags == ["IA"]
     assert restored.quoted_tweet is not None
     assert restored.quoted_tweet.metrics.likes == 7
+
+
+def _entry(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "entryId": "tweet-%s" % result["rest_id"],
+        "content": {"entryType": "TimelineTimelineItem", "itemContent": {"tweet_results": {"result": result}}},
+    }
+
+
+def test_pinned_tweet_is_flagged_listed_first_and_not_repeated() -> None:
+    alice = _user("1", "alice")
+    instructions = [
+        {"type": "TimelineClearCache"},
+        {"type": "TimelineAddEntries", "entries": [_entry(_result("9", alice, {})), _entry(_result("5", alice, {}))]},
+        {"type": "TimelinePinEntry", "entry": _entry(_result("5", alice, {}))},
+    ]
+
+    tweets, _ = parse_timeline_response({}, lambda data: instructions)
+
+    assert [(tweet.id, tweet.is_pinned) for tweet in tweets] == [("5", True), ("9", False)]
+    assert tweet_to_dict(tweets[0])["isPinned"] is True
+    assert tweet_to_dict(tweets[1])["isPinned"] is False
+    assert tweet_from_dict(tweet_to_dict(tweets[0])).is_pinned is True
+
+
+def test_timelines_without_a_pin_entry_flag_nothing() -> None:
+    alice = _user("1", "alice")
+    instructions = [{"type": "TimelineAddEntries", "entries": [_entry(_result("9", alice, {}))]}]
+
+    tweets, _ = parse_timeline_response({}, lambda data: instructions)
+
+    assert [tweet.is_pinned for tweet in tweets] == [False]
