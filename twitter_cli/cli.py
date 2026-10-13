@@ -1257,7 +1257,7 @@ def mentions(ctx, screen_name, max_count, cursor, as_json, as_yaml, output_file,
 @click.option("--full-text", is_flag=True, help="Show full tweet text in table output.")
 @click.pass_context
 def conversation(ctx, tweet_id, max_count, cursor, as_json, as_yaml, output_file, full_text):
-    """Every post in a conversation, newest first. TWEET_ID is the root ID or URL."""
+    """A tweet and its replies, newest replies first. TWEET_ID is the ID or URL."""
     _run_tweet_search_command(
         ctx,
         lambda client: _normalize_tweet_id(tweet_id),
@@ -1322,7 +1322,7 @@ def retweeters(tweet_id, max_count, cursor, as_json, as_yaml):
 @click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous lists request.")
 @structured_output_options
 def lists_command(screen_name, max_count, cursor, as_json, as_yaml):
-    """Show the lists a user owns or follows. SCREEN_NAME defaults to you."""
+    """Show the lists a user owns. SCREEN_NAME defaults to you."""
     config = load_config()
     rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml)
 

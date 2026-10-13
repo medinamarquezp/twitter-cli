@@ -54,6 +54,9 @@ def _extract_cursor(content):
     """Extract Bottom pagination cursor from timeline content."""
     if content.get("cursorType") == "Bottom":
         return content.get("value")
+    item_content = content.get("itemContent") or {}
+    if item_content.get("itemType") == "TimelineTimelineCursor" and item_content.get("cursorType") == "Bottom":
+        return item_content.get("value")
     return None
 
 
@@ -413,7 +416,12 @@ def parse_list_result(list_data: Any) -> Optional[TwitterList]:
     if not list_id:
         return None
     owner = _deep_get(list_data, "user_results", "result") or {}
-    owner_screen_name = _deep_get(owner, "core", "screen_name") or _deep_get(owner, "legacy", "screen_name") or ""
+    owner_screen_name = (
+        _deep_get(owner, "core", "screen_name")
+        or _deep_get(owner, "legacy", "screen_name")
+        or _deep_get(list_data, "user", "screen_name")
+        or ""
+    )
     return TwitterList(
         id=list_id,
         name=str(list_data.get("name") or ""),

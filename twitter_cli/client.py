@@ -48,7 +48,7 @@ from .graphql import (
     _resolve_query_id,
     _update_features_from_html,
 )
-from .models import BookmarkFolder, TwitterList, UserProfile
+from .models import BookmarkFolder, UserProfile
 from .parser import (
     _deep_get,
     _parse_int,
@@ -181,10 +181,6 @@ def _created_tweet_result(data):
 def _parse_user_item(item_content: Dict[str, Any]) -> Optional[UserProfile]:
     user_results = _deep_get(item_content, "user_results", "result")
     return parse_user_result(user_results) if user_results else None
-
-
-def _parse_list_item(item_content: Dict[str, Any]) -> Optional[TwitterList]:
-    return parse_list_result(item_content.get("list"))
 
 
 def _parse_item_entries(
@@ -385,12 +381,12 @@ class TwitterClient:
     def fetch_user_tweets(self, user_id, count=20, cursor=None, return_cursor=False, with_replies=False):
         # type: (str, int, Optional[str], bool, bool) -> Any
         """Fetch tweets posted by a user, optionally including the replies tab."""
-        extra_variables = {
+        extra_variables: Dict[str, Any] = {
             "userId": user_id,
             "includePromotedContent": True,
             "withVoice": True,
             "withV2Timeline": True,
-        }  # type: Dict[str, Any]
+        }
         if with_replies:
             extra_variables["withCommunity"] = True
         else:
@@ -463,10 +459,15 @@ class TwitterClient:
             return_cursor=return_cursor,
         )
 
-    def fetch_tweet_detail(self, tweet_id, count=20):
-        # type: (str, int) -> List[Tweet]
-        """Fetch a tweet and its conversation thread (replies)."""
-        tweets = self._fetch_timeline(
+    def _fetch_tweet_detail_timeline(
+        self,
+        tweet_id: str,
+        count: int,
+        ranking_mode: str = "Relevance",
+        cursor: Optional[str] = None,
+        return_cursor: bool = False,
+    ) -> Any:
+        return self._fetch_timeline(
             "TweetDetail",
             count,
             lambda data: _deep_get(data, "data", "tweetResult", "result", "timeline", "instructions")
@@ -476,7 +477,7 @@ class TwitterClient:
                 "referrer": "tweet",
                 "with_rux_injections": False,
                 "includePromotedContent": True,
-                "rankingMode": "Relevance",
+                "rankingMode": ranking_mode,
                 "withCommunity": True,
                 "withQuickPromoteEligibilityTweetFields": True,
                 "withBirdwatchNotes": True,
@@ -489,7 +490,14 @@ class TwitterClient:
                 "withGrokAnalyze": False,
                 "withDisallowedReplyControls": False,
             },
+            start_cursor=cursor,
+            return_cursor=return_cursor,
         )
+
+    def fetch_tweet_detail(self, tweet_id, count=20):
+        # type: (str, int) -> List[Tweet]
+        """Fetch a tweet and its conversation thread (replies)."""
+        tweets = self._fetch_tweet_detail_timeline(tweet_id, count)
         focal_tweet = next((tweet for tweet in tweets if tweet.id == tweet_id), None)
         if focal_tweet is None:
             raise NotFoundError(
@@ -594,23 +602,22 @@ class TwitterClient:
         )
 
     def fetch_lists(self, user_id: str, count: int = 20, cursor: Optional[str] = None, return_cursor: bool = False) -> Any:
-        return self._fetch_item_list(
-            "CombinedLists",
-            {"userId": user_id},
-            count,
-            lambda data: _deep_get(data, "data", "user", "result", "timeline", "timeline", "instructions"),
-            _parse_list_item,
-            start_cursor=cursor,
-            return_cursor=return_cursor,
-        )
+        query: Dict[str, Any] = {"user_id": user_id, "count": min(max(count, 1), 1000)}
+        if cursor:
+            query["cursor"] = cursor
+        data = self._api_get("https://x.com/i/api/1.1/lists/ownerships.json?%s" % urllib.parse.urlencode(query))
+        raw_lists = data.get("lists") if isinstance(data, dict) else None
+        items = [item for item in (parse_list_result(raw) for raw in raw_lists or []) if item]
+        next_cursor = str(data.get("next_cursor_str") or "") if isinstance(data, dict) else ""
+        continuation = next_cursor if next_cursor not in ("", "0") else None
+        return (items, continuation) if return_cursor else items
 
     def fetch_mentions(self, screen_name: str, count: int = 20, cursor: Optional[str] = None, return_cursor: bool = False) -> Any:
         query = "@%s -from:%s" % (screen_name, screen_name)
         return self.fetch_search(query, count, "Latest", cursor=cursor, return_cursor=return_cursor)
 
     def fetch_conversation(self, tweet_id: str, count: int = 20, cursor: Optional[str] = None, return_cursor: bool = False) -> Any:
-        query = "conversation_id:%s" % tweet_id
-        return self.fetch_search(query, count, "Latest", cursor=cursor, return_cursor=return_cursor)
+        return self._fetch_tweet_detail_timeline(tweet_id, count, "Recency", cursor, return_cursor)
 
     def fetch_quotes(self, tweet_id: str, count: int = 20, cursor: Optional[str] = None, return_cursor: bool = False) -> Any:
         query = "quoted_tweet_id:%s" % tweet_id

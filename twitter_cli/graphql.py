@@ -60,7 +60,6 @@ FALLBACK_QUERY_IDS = {
     "UserTweetsAndReplies": "D5eKzDa5ZoJuC1TCeAXbWA",
     "Retweeters": "TZsWuSj7vGmncVnq7KWDUQ",
     "ListMembers": "oIetCo19avgStX4mOnGsPg",
-    "CombinedLists": "ulFO9MUgZ5uJP_2l7cKciA",
 }
 
 # ── Default feature flags ────────────────────────────────────────────────

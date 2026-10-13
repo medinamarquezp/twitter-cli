@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
 from twitter_cli.cli import cli
 from twitter_cli.client import TwitterClient
 from twitter_cli.models import TwitterList, UserProfile
-from twitter_cli.parser import parse_list_result
+from twitter_cli.parser import _extract_cursor, parse_list_result
 
 
 def _client() -> TwitterClient:
@@ -54,14 +54,42 @@ def test_search_based_reads_build_safe_queries() -> None:
     client.fetch_search = MagicMock(return_value=([], None))
 
     client.fetch_mentions("alice", 5, cursor="c1", return_cursor=True)
-    client.fetch_conversation("123", 5)
     client.fetch_quotes("456", 5)
 
     calls = client.fetch_search.call_args_list
     assert calls[0].args == ("@alice -from:alice", 5, "Latest")
     assert calls[0].kwargs == {"cursor": "c1", "return_cursor": True}
-    assert calls[1].args == ("conversation_id:123", 5, "Latest")
-    assert calls[2].args == ("quoted_tweet_id:456", 5, "Latest")
+    assert calls[1].args == ("quoted_tweet_id:456", 5, "Latest")
+
+
+def test_conversation_reads_the_tweet_detail_newest_first() -> None:
+    client = _client()
+    calls = []
+
+    def graphql_get(operation_name, variables, features, field_toggles=None):
+        calls.append((operation_name, variables.copy()))
+        return {}
+
+    client._graphql_get = graphql_get
+
+    with patch("twitter_cli.client.parse_timeline_response", return_value=([], None)):
+        tweets, cursor = client.fetch_conversation("123", 5, cursor="prev", return_cursor=True)
+
+    assert (tweets, cursor) == ([], None)
+    assert calls[0][0] == "TweetDetail"
+    assert calls[0][1]["focalTweetId"] == "123"
+    assert calls[0][1]["rankingMode"] == "Recency"
+    assert calls[0][1]["cursor"] == "prev"
+
+
+def test_tweet_detail_cursor_can_sit_inside_the_item() -> None:
+    content = {
+        "entryType": "TimelineTimelineItem",
+        "itemContent": {"itemType": "TimelineTimelineCursor", "cursorType": "Bottom", "value": "more"},
+    }
+
+    assert _extract_cursor(content) == "more"
+    assert _extract_cursor({"entryType": "TimelineTimelineItem", "itemContent": {}}) is None
 
 
 def test_retweeters_and_list_members_read_user_timelines() -> None:
@@ -104,31 +132,50 @@ def test_retweeters_and_list_members_read_user_timelines() -> None:
     assert calls[1][1]["listId"] == "456"
 
 
-def test_lists_are_read_from_items_and_modules() -> None:
+def test_users_inside_timeline_modules_are_read() -> None:
     client = _client()
-    entries = [
-        {
-            "content": {
-                "entryType": "TimelineTimelineItem",
-                "itemContent": {"itemType": "TimelineTwitterList", "list": _list_data("10", "Referentes", "Private")},
-            }
-        },
-        {
-            "content": {
-                "entryType": "TimelineTimelineModule",
-                "items": [{"item": {"itemContent": {"list": _list_data("11", "Pares", "Public")}}}],
-            }
-        },
-    ]
+    module = {
+        "content": {
+            "entryType": "TimelineTimelineModule",
+            "items": [{"item": {"itemContent": {"user_results": {"result": _user("9", "dave")}}}}],
+        }
+    }
     client._graphql_get = lambda operation_name, variables, features: {
-        "data": {"user": {"result": {"timeline": {"timeline": {"instructions": [{"entries": entries}]}}}}}
+        "data": {"list": {"members_timeline": {"timeline": {"instructions": [{"entries": [module]}]}}}}
     }
 
-    items, cursor = client.fetch_lists("1", 10, return_cursor=True)
+    members = client.fetch_list_members("456", 5)
 
-    assert [item.name for item in items] == ["Referentes", "Pares"]
-    assert [item.is_private for item in items] == [True, False]
-    assert cursor is None
+    assert [user.screen_name for user in members] == ["dave"]
+
+
+def test_lists_are_read_from_the_rest_ownerships_endpoint() -> None:
+    client = _client()
+    urls = []
+    rest_list = {
+        "id_str": "10",
+        "name": "Referentes",
+        "member_count": 12,
+        "mode": "private",
+        "user": {"screen_name": "alice"},
+    }
+
+    def api_get(url):
+        urls.append(url)
+        return {"lists": [rest_list], "next_cursor_str": "0" if "cursor=" in url else "77"}
+
+    client._api_get = api_get
+
+    first, first_cursor = client.fetch_lists("1", 10, return_cursor=True)
+    second, second_cursor = client.fetch_lists("1", 10, cursor="77", return_cursor=True)
+
+    assert [item.name for item in first] == ["Referentes"]
+    assert first[0].is_private is True
+    assert first[0].owner_screen_name == "alice"
+    assert first_cursor == "77"
+    assert second_cursor is None
+    assert "lists/ownerships.json?user_id=1&count=10" in urls[0]
+    assert "cursor=77" in urls[1]
 
 
 def test_parse_list_result_reads_counts_privacy_and_owner() -> None:
