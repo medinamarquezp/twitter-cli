@@ -224,8 +224,8 @@ class TwitterClient:
             return_cursor=return_cursor,
         )
 
-    def fetch_bookmarks(self, count=50):
-        # type: (int) -> List[Tweet]
+    def fetch_bookmarks(self, count=50, cursor=None, return_cursor=False):
+        # type: (int, Optional[str], bool) -> Any
         """Fetch bookmarked tweets."""
         def get_instructions(data):
             # type: (Any) -> Any
@@ -234,7 +234,9 @@ class TwitterClient:
                 instructions = _deep_get(data, "data", "bookmark_timeline_v2", "timeline", "instructions")
             return instructions
 
-        return self._fetch_timeline("Bookmarks", count, get_instructions)
+        return self._fetch_timeline(
+            "Bookmarks", count, get_instructions, start_cursor=cursor, return_cursor=return_cursor,
+        )
 
     def fetch_bookmark_folders(self):
         # type: () -> List[BookmarkFolder]
@@ -346,27 +348,33 @@ class TwitterClient:
             created_at=core.get("created_at") or legacy.get("created_at", ""),
         )
 
-    def fetch_user_tweets(self, user_id, count=20):
-        # type: (str, int) -> List[Tweet]
-        """Fetch tweets posted by a user."""
+    def fetch_user_tweets(self, user_id, count=20, cursor=None, return_cursor=False, with_replies=False):
+        # type: (str, int, Optional[str], bool, bool) -> Any
+        """Fetch tweets posted by a user, optionally including the replies tab."""
+        extra_variables = {
+            "userId": user_id,
+            "includePromotedContent": True,
+            "withVoice": True,
+            "withV2Timeline": True,
+        }  # type: Dict[str, Any]
+        if with_replies:
+            extra_variables["withCommunity"] = True
+        else:
+            extra_variables["withQuickPromoteEligibilityTweetFields"] = True
         return self._fetch_timeline(
-            "UserTweets",
+            "UserTweetsAndReplies" if with_replies else "UserTweets",
             count,
             lambda data: (
                 _deep_get(data, "data", "user", "result", "timeline", "timeline", "instructions")
                 or _deep_get(data, "data", "user", "result", "timeline_v2", "timeline", "instructions")
             ),
-            extra_variables={
-                "userId": user_id,
-                "includePromotedContent": True,
-                "withQuickPromoteEligibilityTweetFields": True,
-                "withVoice": True,
-                "withV2Timeline": True,
-            },
+            extra_variables=extra_variables,
+            start_cursor=cursor,
+            return_cursor=return_cursor,
         )
 
-    def fetch_user_likes(self, user_id, count=20):
-        # type: (str, int) -> List[Tweet]
+    def fetch_user_likes(self, user_id, count=20, cursor=None, return_cursor=False):
+        # type: (str, int, Optional[str], bool) -> Any
         """Fetch tweets liked by a user."""
 
         def get_likes_instructions(data):
@@ -390,10 +398,12 @@ class TwitterClient:
                 "withVoice": True,
             },
             override_base_variables=True,
+            start_cursor=cursor,
+            return_cursor=return_cursor,
         )
 
-    def fetch_search(self, query, count=20, product="Top"):
-        # type: (str, int, str) -> List[Tweet]
+    def fetch_search(self, query, count=20, product="Top", cursor=None, return_cursor=False):
+        # type: (str, int, str, Optional[str], bool) -> Any
         """Search tweets by query.
 
         Args:
@@ -415,6 +425,8 @@ class TwitterClient:
             },
             override_base_variables=True,
             use_post=True,
+            start_cursor=cursor,
+            return_cursor=return_cursor,
         )
 
     def fetch_tweet_detail(self, tweet_id, count=20):
@@ -503,22 +515,26 @@ class TwitterClient:
             return_cursor=return_cursor,
         )
 
-    def fetch_followers(self, user_id, count=20):
-        # type: (str, int) -> List[UserProfile]
+    def fetch_followers(self, user_id, count=20, cursor=None, return_cursor=False):
+        # type: (str, int, Optional[str], bool) -> Any
         """Fetch followers of a user."""
         return self._fetch_user_list(
             "Followers", user_id, count,
             lambda data: _deep_get(data, "data", "user", "result", "timeline", "timeline", "instructions"),
             use_post=True,
+            start_cursor=cursor,
+            return_cursor=return_cursor,
         )
 
-    def fetch_following(self, user_id, count=20):
-        # type: (str, int) -> List[UserProfile]
+    def fetch_following(self, user_id, count=20, cursor=None, return_cursor=False):
+        # type: (str, int, Optional[str], bool) -> Any
         """Fetch users that a user is following."""
         return self._fetch_user_list(
             "Following", user_id, count,
             lambda data: _deep_get(data, "data", "user", "result", "timeline", "timeline", "instructions"),
             use_post=True,
+            start_cursor=cursor,
+            return_cursor=return_cursor,
         )
 
     # ── Write operations ─────────────────────────────────────────────
@@ -822,7 +838,7 @@ class TwitterClient:
                 endpoints like SearchTimeline that Twitter migrated to POST.
         """
         if count <= 0:
-            return []
+            return ([], None) if return_cursor else []
 
         # Enforce max count cap
         count = min(count, self._max_count)
@@ -858,6 +874,8 @@ class TwitterClient:
             new_tweets, next_cursor = parse_timeline_response(data, get_instructions)
 
             for tweet in new_tweets:
+                if tweet.is_promoted and not include_promoted:
+                    continue
                 if tweet.id and tweet.id not in seen_ids:
                     seen_ids.add(tweet.id)
                     tweets.append(tweet)
@@ -882,18 +900,19 @@ class TwitterClient:
                 time.sleep(jitter)
 
         if return_cursor:
-            return tweets[:count], continuation_cursor
+            return tweets, continuation_cursor
         return tweets[:count]
 
-    def _fetch_user_list(self, operation_name, user_id, count, get_instructions, use_post=False):
-        # type: (str, str, int, Callable[[Any], Any], bool) -> List[UserProfile]
+    def _fetch_user_list(self, operation_name, user_id, count, get_instructions, use_post=False, start_cursor=None, return_cursor=False):
+        # type: (str, str, int, Callable[[Any], Any], bool, Optional[str], bool) -> Any
         """Generic user list fetcher (for followers/following) with pagination."""
         if count <= 0:
-            return []
+            return ([], None) if return_cursor else []
         count = min(count, self._max_count)
         users = []  # type: List[UserProfile]
         seen_ids = set()  # type: Set[str]
-        cursor = None  # type: Optional[str]
+        cursor = start_cursor  # type: Optional[str]
+        continuation_cursor = None  # type: Optional[str]
         attempts = 0
         max_attempts = int(math.ceil(count / 20.0)) + 2
 
@@ -941,10 +960,13 @@ class TwitterClient:
                     users.append(user)
 
             if not next_cursor:
+                continuation_cursor = None
                 break
             if next_cursor == cursor:
                 logger.debug("User list pagination stopped because cursor did not advance: %s", next_cursor)
+                continuation_cursor = None
                 break
+            continuation_cursor = next_cursor
             cursor = next_cursor
 
             if not new_users:
@@ -953,6 +975,8 @@ class TwitterClient:
             if len(users) < count and self._request_delay > 0:
                 time.sleep(self._request_delay * random.uniform(0.7, 1.5))
 
+        if return_cursor:
+            return users, continuation_cursor
         return users[:count]
 
     # ── Internal: GraphQL request methods ────────────────────────────

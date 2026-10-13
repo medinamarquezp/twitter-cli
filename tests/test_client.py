@@ -472,7 +472,7 @@ class TestPaginationBehavior:
         def _parse_timeline_response(data, get_instructions):
             if data["page"] == 1:
                 return [], "cursor-2"
-            return [MagicMock(id="tweet-1")], None
+            return [MagicMock(id="tweet-1", is_promoted=False)], None
 
         client._graphql_get = _graphql_get
 
@@ -513,7 +513,7 @@ class TestPaginationBehavior:
 
         client._graphql_get = _graphql_get
 
-        tweet = MagicMock(id="tweet-1")
+        tweet = MagicMock(id="tweet-1", is_promoted=False)
         with patch('twitter_cli.client.parse_timeline_response', return_value=([tweet], "cursor-next")):
             tweets, cursor = client._fetch_timeline(
                 "HomeTimeline",
@@ -540,7 +540,7 @@ class TestPaginationBehavior:
 
         client._graphql_get = _graphql_get
 
-        tweet = MagicMock(id="tweet-1")
+        tweet = MagicMock(id="tweet-1", is_promoted=False)
         with patch('twitter_cli.client.parse_timeline_response', return_value=([tweet], "cursor-next")):
             tweets, cursor = client.fetch_list_timeline(
                 "list-1",

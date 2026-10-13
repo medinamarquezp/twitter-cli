@@ -702,10 +702,10 @@ def test_cli_search_advanced_options(monkeypatch) -> None:
     captured = {}
 
     class FakeClient:
-        def fetch_search(self, query: str, count: int, product: str):
+        def fetch_search(self, query: str, count: int, product: str, cursor=None, return_cursor=False):
             captured["query"] = query
             captured["product"] = product
-            return []
+            return [], None
 
     monkeypatch.setattr("twitter_cli.cli._get_client", lambda config=None, quiet=False: FakeClient())
     monkeypatch.setattr(
@@ -738,9 +738,9 @@ def test_cli_search_operators_only_no_query(monkeypatch) -> None:
     captured = {}
 
     class FakeClient:
-        def fetch_search(self, query: str, count: int, product: str):
+        def fetch_search(self, query: str, count: int, product: str, cursor=None, return_cursor=False):
             captured["query"] = query
-            return []
+            return [], None
 
     monkeypatch.setattr("twitter_cli.cli._get_client", lambda config=None, quiet=False: FakeClient())
     monkeypatch.setattr(
@@ -897,8 +897,8 @@ def test_show_malformed_cache_treated_as_empty(monkeypatch, tmp_path):
 
 def test_structured_output_builds_quiet_clients(monkeypatch, tweet_factory) -> None:
     class FakeClient:
-        def fetch_bookmarks(self, count: int):
-            return [tweet_factory("1")]
+        def fetch_bookmarks(self, count: int, cursor=None, return_cursor=False):
+            return [tweet_factory("1")], None
 
         def fetch_list_timeline(self, list_id: str, count: int, cursor=None, return_cursor=False):
             return [tweet_factory("2")], None

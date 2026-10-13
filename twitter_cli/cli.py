@@ -316,7 +316,8 @@ def _fetch_and_display(fetch_fn, label, emoji, max_count, as_json, as_yaml, outp
         if rich_output:
             console.print("%s Fetching %s (%d tweets)...\n" % (emoji, label, fetch_count))
         start = time.time()
-        tweets = fetch_fn(fetch_count)
+        result = fetch_fn(fetch_count)
+        tweets, next_cursor = result if isinstance(result, tuple) else (result, None)
         elapsed = time.time() - start
         if rich_output:
             console.print("✅ Fetched %d %s in %.1fs\n" % (len(tweets), label, elapsed))
@@ -336,7 +337,7 @@ def _fetch_and_display(fetch_fn, label, emoji, max_count, as_json, as_yaml, outp
 
     save_tweet_cache(filtered)
 
-    if emit_structured(tweets_to_data(filtered), as_json=as_json, as_yaml=as_yaml):
+    if _emit_timeline_structured(filtered, next_cursor, as_json=as_json, as_yaml=as_yaml):
         return
 
     print_tweet_table(
@@ -358,15 +359,15 @@ def _emit_timeline_structured(tweets, next_cursor, *, as_json, as_yaml):
     return emit_structured(payload, as_json=as_json, as_yaml=as_yaml)
 
 
-def _run_bookmarks_command(max_count, as_json, as_yaml, output_file, do_filter, compact=False, full_text=False):
-    # type: (Optional[int], bool, bool, Optional[str], bool, bool, bool) -> None
+def _run_bookmarks_command(max_count, as_json, as_yaml, output_file, do_filter, compact=False, full_text=False, cursor=None):
+    # type: (Optional[int], bool, bool, Optional[str], bool, bool, bool, Optional[str]) -> None
     config = load_config()
     rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml, compact=compact)
 
     def _run():
         client = _get_client(config, quiet=not rich_output)
         _fetch_and_display(
-            lambda count: client.fetch_bookmarks(count),
+            lambda count: client.fetch_bookmarks(count, cursor=cursor, return_cursor=True),
             "bookmarks",
             "🔖",
             max_count,
@@ -510,13 +511,14 @@ def favorites(ctx, max_count, as_json, as_yaml, output_file, do_filter, full_tex
 
 @cli.group(name="bookmarks", invoke_without_command=True)
 @click.option("--max", "-n", "max_count", type=int, default=None, help="Max number of tweets to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous bookmarks request.")
 @structured_output_options
 @click.option("--output", "-o", "output_file", type=str, default=None, help="Save tweets to JSON file.")
 @click.option("--filter", "do_filter", is_flag=True, help="Enable score-based filtering.")
 @click.option("--full-text", is_flag=True, help="Show full tweet text in table output.")
 @click.pass_context
-def bookmarks(ctx, max_count, as_json, as_yaml, output_file, do_filter, full_text):
-    # type: (Any, Optional[int], bool, bool, Optional[str], bool, bool) -> None
+def bookmarks(ctx, max_count, cursor, as_json, as_yaml, output_file, do_filter, full_text):
+    # type: (Any, Optional[int], Optional[str], bool, bool, Optional[str], bool, bool) -> None
     """Fetch bookmarked tweets, or manage bookmark folders."""
     if ctx.invoked_subcommand is None:
         _run_bookmarks_command(
@@ -527,6 +529,7 @@ def bookmarks(ctx, max_count, as_json, as_yaml, output_file, do_filter, full_tex
             do_filter,
             compact=ctx.obj.get("compact", False),
             full_text=full_text,
+            cursor=cursor,
         )
 
 
@@ -693,12 +696,14 @@ def user(screen_name, as_json, as_yaml):
 @cli.command("user-posts")
 @click.argument("screen_name")
 @click.option("--max", "-n", "max_count", type=int, default=None, help="Max number of tweets to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous user-posts request.")
+@click.option("--with-replies", is_flag=True, help="Read the replies tab, which includes the user's replies.")
 @structured_output_options
 @click.option("--output", "-o", "output_file", type=str, default=None, help="Save tweets to JSON file.")
 @click.option("--full-text", is_flag=True, help="Show full tweet text in table output.")
 @click.pass_context
-def user_posts(ctx, screen_name, max_count, as_json, as_yaml, output_file, full_text):
-    # type: (Any, str, int, bool, bool, Optional[str], bool) -> None
+def user_posts(ctx, screen_name, max_count, cursor, with_replies, as_json, as_yaml, output_file, full_text):
+    # type: (Any, str, int, Optional[str], bool, bool, bool, Optional[str], bool) -> None
     """List a user's tweets. SCREEN_NAME is the @handle (without @)."""
     screen_name = screen_name.lstrip("@")
     compact = ctx.obj.get("compact", False)
@@ -710,7 +715,9 @@ def user_posts(ctx, screen_name, max_count, as_json, as_yaml, output_file, full_
             console.print("👤 Fetching @%s's profile..." % screen_name)
         profile = client.fetch_user(screen_name)
         _fetch_and_display(
-            lambda count: client.fetch_user_tweets(profile.id, count),
+            lambda count: client.fetch_user_tweets(
+                profile.id, count, cursor=cursor, return_cursor=True, with_replies=with_replies,
+            ),
             "@%s tweets" % screen_name, "📝", max_count, as_json, as_yaml, output_file, False, config,
             compact=compact, full_text=full_text,
         )
@@ -747,13 +754,14 @@ def user_posts(ctx, screen_name, max_count, as_json, as_yaml, output_file, full_
 @click.option("--min-likes", type=click.IntRange(min=0), default=None, help="Minimum number of likes.")
 @click.option("--min-retweets", type=click.IntRange(min=0), default=None, help="Minimum number of retweets.")
 @click.option("--max", "-n", "max_count", type=int, default=None, help="Max number of tweets to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous search request.")
 @structured_output_options
 @click.option("--output", "-o", "output_file", type=str, default=None, help="Save tweets to JSON file.")
 @click.option("--filter", "do_filter", is_flag=True, help="Enable score-based filtering.")
 @click.option("--full-text", is_flag=True, help="Show full tweet text in table output.")
 @click.pass_context
-def search(ctx, query, product, from_user, to_user, lang, since, until, has, exclude, min_likes, min_retweets, max_count, as_json, as_yaml, output_file, do_filter, full_text):
-    # type: (Any, str, str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], tuple, tuple, Optional[int], Optional[int], int, bool, bool, Optional[str], bool, bool) -> None
+def search(ctx, query, product, from_user, to_user, lang, since, until, has, exclude, min_likes, min_retweets, max_count, cursor, as_json, as_yaml, output_file, do_filter, full_text):
+    # type: (Any, str, str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], tuple, tuple, Optional[int], Optional[int], int, Optional[str], bool, bool, Optional[str], bool, bool) -> None
     """Search tweets by QUERY string with optional advanced filters.
 
     QUERY is the search keywords (optional when using advanced filters).
@@ -792,7 +800,7 @@ def search(ctx, query, product, from_user, to_user, lang, since, until, has, exc
         rich_output = use_rich_output(as_json=as_json, as_yaml=as_yaml, compact=compact)
         client = _get_client(config, quiet=not rich_output)
         _fetch_and_display(
-            lambda count: client.fetch_search(composed_query, count, product),
+            lambda count: client.fetch_search(composed_query, count, product, cursor=cursor, return_cursor=True),
             "'%s' (%s)" % (composed_query, product), "🔍", max_count, as_json, as_yaml, output_file, do_filter, config,
             compact=compact, full_text=full_text,
         )
@@ -802,13 +810,14 @@ def search(ctx, query, product, from_user, to_user, lang, since, until, has, exc
 @cli.command()
 @click.argument("screen_name")
 @click.option("--max", "-n", "max_count", type=int, default=None, help="Max number of tweets to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous likes request.")
 @structured_output_options
 @click.option("--output", "-o", "output_file", type=str, default=None, help="Save tweets to JSON file.")
 @click.option("--filter", "do_filter", is_flag=True, help="Enable score-based filtering.")
 @click.option("--full-text", is_flag=True, help="Show full tweet text in table output.")
 @click.pass_context
-def likes(ctx, screen_name, max_count, as_json, as_yaml, output_file, do_filter, full_text):
-    # type: (Any, str, int, bool, bool, Optional[str], bool, bool) -> None
+def likes(ctx, screen_name, max_count, cursor, as_json, as_yaml, output_file, do_filter, full_text):
+    # type: (Any, str, int, Optional[str], bool, bool, Optional[str], bool, bool) -> None
     """Show tweets liked by a user. SCREEN_NAME is the @handle (without @).
 
     NOTE: Twitter/X made all likes private since June 2024. You can only view
@@ -844,7 +853,7 @@ def likes(ctx, screen_name, max_count, as_json, as_yaml, output_file, do_filter,
             pass  # Don't block the command if whoami fails
 
         _fetch_and_display(
-            lambda count: client.fetch_user_likes(profile.id, count),
+            lambda count: client.fetch_user_likes(profile.id, count, cursor=cursor, return_cursor=True),
             "@%s likes" % screen_name, "❤️", max_count, as_json, as_yaml, output_file, do_filter, config,
             compact=compact, full_text=full_text,
         )
@@ -1071,6 +1080,7 @@ def _fetch_and_display_users(
     max_count: Optional[int],
     as_json: bool,
     as_yaml: bool,
+    cursor: Optional[str] = None,
 ) -> None:
     """Shared fetch-and-display logic for followers/following commands."""
     screen_name = screen_name.lstrip("@")
@@ -1085,14 +1095,19 @@ def _fetch_and_display_users(
         if rich_output:
             console.print("👥 Fetching %s (%d)...\n" % (label, fetch_count))
         start = time.time()
-        users = getattr(client, fetch_fn_name)(profile.id, fetch_count)
+        users, next_cursor = getattr(client, fetch_fn_name)(
+            profile.id, fetch_count, cursor=cursor, return_cursor=True,
+        )
         elapsed = time.time() - start
         if rich_output:
             console.print("✅ Fetched %d %s in %.1fs\n" % (len(users), label, elapsed))
     except (TwitterError, RuntimeError) as exc:
         _exit_with_error(exc)
 
-    if emit_structured(users_to_data(users), as_json=as_json, as_yaml=as_yaml):
+    payload = success_payload(users_to_data(users))
+    if next_cursor:
+        payload["pagination"] = {"nextCursor": next_cursor}
+    if emit_structured(payload, as_json=as_json, as_yaml=as_yaml):
         return
 
     print_user_table(users, console, title="👥 @%s %s — %d" % (screen_name, label, len(users)))
@@ -1102,21 +1117,23 @@ def _fetch_and_display_users(
 @cli.command()
 @click.argument("screen_name")
 @click.option("--max", "-n", "max_count", type=int, default=None, help="Max users to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous followers request.")
 @structured_output_options
-def followers(screen_name, max_count, as_json, as_yaml):
-    # type: (str, int, bool, bool) -> None
+def followers(screen_name, max_count, cursor, as_json, as_yaml):
+    # type: (str, int, Optional[str], bool, bool) -> None
     """List followers of a user. SCREEN_NAME is the @handle (without @)."""
-    _fetch_and_display_users(screen_name, "fetch_followers", "followers", max_count, as_json, as_yaml)
+    _fetch_and_display_users(screen_name, "fetch_followers", "followers", max_count, as_json, as_yaml, cursor)
 
 
 @cli.command()
 @click.argument("screen_name")
 @click.option("--max", "-n", "max_count", type=int, default=None, help="Max users to fetch.")
+@click.option("--cursor", type=str, default=None, help="Pagination cursor from a previous following request.")
 @structured_output_options
-def following(screen_name, max_count, as_json, as_yaml):
-    # type: (str, int, bool, bool) -> None
+def following(screen_name, max_count, cursor, as_json, as_yaml):
+    # type: (str, int, Optional[str], bool, bool) -> None
     """List accounts a user is following. SCREEN_NAME is the @handle (without @)."""
-    _fetch_and_display_users(screen_name, "fetch_following", "following", max_count, as_json, as_yaml)
+    _fetch_and_display_users(screen_name, "fetch_following", "following", max_count, as_json, as_yaml, cursor)
 
 
 # ── Write commands ──────────────────────────────────────────────────────
