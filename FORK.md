@@ -11,7 +11,7 @@ This fork of [public-clis/twitter-cli](https://github.com/public-clis/twitter-cl
 ## Install
 
 ```bash
-uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.3
+uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.4
 ```
 
 ## Integrated upstream pull requests
@@ -52,12 +52,12 @@ uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.3
 | `0.8.6+fork.3` | `lists [SCREEN_NAME]`: lists a user owns, through the 1.1 `lists/ownerships.json` endpoint. `CombinedLists`, `ListsManagementPageTimeline` and `ListOwnerships` answer `DecodeException` for an account that owns a list, even with the web's feature flags |
 | `0.8.6+fork.3` | Handles, tweet IDs and list IDs are validated before they are used, so arguments cannot inject search operators |
 | `0.8.6+fork.3` | A Bottom cursor nested inside a timeline item is now followed |
+| `0.8.6+fork.4` | Native scheduling: `schedule TEXT --at TIME [-i IMAGE]` (`CreateScheduledTweet`; X publishes the post even when this machine is off), `scheduled` (`FetchScheduledTweets`) and `unschedule ID` (`DeleteScheduledTweet`). `--at` takes ISO 8601, local time without an offset, at least five minutes ahead. `scheduled` is verified against X; `schedule` and `unschedule` are covered by tests but not yet exercised against a live account |
 
 ## Planned fork work
 
-- Native scheduling through `CreateScheduledTweet`: schedule, list and cancel posts.
 - A stable JSON schema for every command.
-- Fix the x.com bundle scan for live query IDs: it currently finds no operation at all, so live IDs come only from twitter-openapi.
+- Fix the bundle scan for live query IDs. It reads the logged-out `https://x.com` page, which only links the `x-web` logged-out entry, so it finds no operation. The logged-in `x.com/home` page links `responsive-web/client-web/main.*.js` (about 100 operations) and a chunk map of about 540 on-demand chunks (`name.hasha.js`) where the rest live, such as the scheduling operations in `bundle.ComposeGrokMedia`. Scanning every chunk is too many requests, so it should run as an explicit refresh command that persists every operation found.
 
 ## Testing
 
