@@ -10,7 +10,7 @@ This fork of [public-clis/twitter-cli](https://github.com/public-clis/twitter-cl
 ## Install
 
 ```bash
-uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.7
+uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.8
 ```
 
 ## Integrated upstream pull requests
@@ -59,6 +59,7 @@ uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.7
 | `0.8.6+fork.7` | The `x.com/home` request that bootstraps `x-client-transaction-id` keeps curl_cffi's own Chrome headers. The fixed Chrome 127 on Windows headers from `x_client_transaction` now get an interactive Cloudflare challenge (HTTP 403), which left search, followers, following and likes without the header. The `ondemand.s` download no longer sends the session cookie to `abs.twimg.com` |
 | `0.8.6+fork.7` | If that bootstrap fails, the last snapshot up to a day old is used and the refresh is retried after 15 minutes instead of on every run; the warning names the cause, such as a Cloudflare challenge |
 | `0.8.6+fork.7` | `user-posts` includes the profile's pinned tweet, first and flagged `isPinned`. X sends it in a separate `TimelinePinEntry` instruction and leaves it out of the timeline entries, so it was missing |
+| `0.8.6+fork.8` | When X rejects a GraphQL queryId (HTTP 404 or 422, or `Query: Unspecified`) and neither the live lookup nor its retry finds one that works, the command fails with `query_id_error` instead of the raw HTTP error, so callers know to run `refresh-query-ids` |
 
 Live web IDs also explained the list `DecodeException`: the twitter-openapi IDs for `CombinedLists`, `ListsManagementPageTimeline` and `ListOwnerships` no longer match the ones the web uses.
 
