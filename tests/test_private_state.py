@@ -10,7 +10,7 @@ import pytest
 
 from twitter_cli import cache, graphql
 from twitter_cli.client import TwitterClient
-from twitter_cli.exceptions import TwitterAPIError
+from twitter_cli.exceptions import QueryIdError, TwitterAPIError
 from twitter_cli.graphql import FEATURES
 from twitter_cli.private_files import write_private_text
 
@@ -113,8 +113,111 @@ def test_graphql_get_does_not_retry_when_the_live_query_id_is_unchanged() -> Non
     with (
         patch("twitter_cli.client._resolve_query_id", side_effect=["same-id", "same-id"]),
         patch("twitter_cli.client._invalidate_query_id"),
-        pytest.raises(TwitterAPIError),
+        pytest.raises(QueryIdError, match='"UserTweets"') as raised,
     ):
         client._graphql_get("UserTweets", {}, FEATURES)
 
     assert len(urls) == 1
+    assert isinstance(raised.value.__cause__, TwitterAPIError)
+
+
+def test_graphql_get_reports_a_query_id_error_when_the_live_query_id_is_stale_too() -> None:
+    client = TwitterClient.__new__(TwitterClient)
+    urls = []
+
+    def api_get(url):
+        urls.append(url)
+        raise TwitterAPIError(422, "stale")
+
+    client._api_get = api_get
+
+    with (
+        patch("twitter_cli.client._resolve_query_id", side_effect=["persisted-id", "live-id"]),
+        patch("twitter_cli.client._invalidate_query_id"),
+        pytest.raises(QueryIdError),
+    ):
+        client._graphql_get("UserTweets", {}, FEATURES)
+
+    assert len(urls) == 2
+
+
+def test_graphql_get_keeps_other_errors_from_the_retry() -> None:
+    client = TwitterClient.__new__(TwitterClient)
+    calls = []
+
+    def api_get(url):
+        calls.append(url)
+        if len(calls) == 1:
+            raise TwitterAPIError(404, "stale")
+        raise TwitterAPIError(401, "Unauthorized")
+
+    client._api_get = api_get
+
+    with (
+        patch("twitter_cli.client._resolve_query_id", side_effect=["persisted-id", "live-id"]),
+        patch("twitter_cli.client._invalidate_query_id"),
+        pytest.raises(TwitterAPIError) as raised,
+    ):
+        client._graphql_get("UserTweets", {}, FEATURES)
+
+    assert not isinstance(raised.value, QueryIdError)
+    assert raised.value.status_code == 401
+
+
+def test_graphql_get_leaves_errors_that_are_not_stale_ids_alone() -> None:
+    client = TwitterClient.__new__(TwitterClient)
+
+    def api_get(url):
+        raise TwitterAPIError(401, "Unauthorized")
+
+    client._api_get = api_get
+
+    with (
+        patch("twitter_cli.client._resolve_query_id", return_value="persisted-id"),
+        patch("twitter_cli.client._invalidate_query_id") as invalidate,
+        pytest.raises(TwitterAPIError) as raised,
+    ):
+        client._graphql_get("UserTweets", {}, FEATURES)
+
+    assert raised.value.status_code == 401
+    invalidate.assert_not_called()
+
+
+def test_graphql_post_reports_a_query_id_error_when_no_newer_query_id_exists() -> None:
+    client = TwitterClient.__new__(TwitterClient)
+    requests = []
+
+    def api_request(url, method="GET", body=None):
+        requests.append(body)
+        raise TwitterAPIError(0, "Twitter API returned errors: Query: Unspecified")
+
+    client._api_request = api_request
+
+    with (
+        patch("twitter_cli.client._resolve_query_id", side_effect=["same-id", "same-id"]),
+        patch("twitter_cli.client._invalidate_query_id"),
+        pytest.raises(QueryIdError, match='"CreateTweet"'),
+    ):
+        client._graphql_post("CreateTweet", {"tweet_text": "hello"}, FEATURES)
+
+    assert len(requests) == 1
+
+
+def test_graphql_post_reports_a_query_id_error_when_the_live_query_id_is_stale_too() -> None:
+    client = TwitterClient.__new__(TwitterClient)
+    requests = []
+
+    def api_request(url, method="GET", body=None):
+        requests.append(body)
+        raise TwitterAPIError(404, "stale")
+
+    client._api_request = api_request
+
+    with (
+        patch("twitter_cli.client._resolve_query_id", side_effect=["persisted-id", "live-id"]),
+        patch("twitter_cli.client._invalidate_query_id"),
+        pytest.raises(QueryIdError),
+    ):
+        client._graphql_post("CreateTweet", {"tweet_text": "hello"}, FEATURES)
+
+    assert [body["queryId"] for body in requests] == ["persisted-id", "live-id"]

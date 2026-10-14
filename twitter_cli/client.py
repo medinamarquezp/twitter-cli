@@ -38,6 +38,7 @@ from .constants import (
 from .exceptions import (
     MediaUploadError,
     NotFoundError,
+    QueryIdError,
     TwitterAPIError,
 )
 from .graphql import (
@@ -151,6 +152,15 @@ def _bootstrap_page_error(response: Any) -> str:
     if isinstance(text, str) and ("cf_chl_opt" in text or "Just a moment" in text):
         return "x.com/home answered HTTP %s with a Cloudflare challenge" % status
     return "x.com/home answered HTTP %s without the ondemand.s bundle" % status
+
+
+def _stale_query_id_error(operation_name, exc):
+    # type: (str, TwitterAPIError) -> QueryIdError
+    """Explain that X rejected an operation's queryId and no working one was found."""
+    return QueryIdError(
+        'X rejected the queryId for "%s" and no working one was found (%s); run refresh-query-ids'
+        % (operation_name, exc.message)
+    )
 
 
 def _is_stale_query_error(exc):
@@ -1127,14 +1137,20 @@ class TwitterClient:
         except TwitterAPIError as exc:
             # Stale IDs may be reported as HTTP 404/422 or as a GraphQL
             # "Query: Unspecified" error inside an otherwise successful response.
-            if _is_stale_query_error(exc):
-                _invalidate_query_id(operation_name)
-                refreshed_query_id = _resolve_query_id(operation_name, prefer_fallback=False, url_fetch_fn=_url_fetch)
-                if refreshed_query_id != query_id:
-                    logger.info("Retrying %s with live queryId after stale-query response", operation_name)
-                    retry_url = _build_graphql_url(refreshed_query_id, operation_name, variables, features, field_toggles)
-                    return self._api_get(retry_url)
-            raise
+            if not _is_stale_query_error(exc):
+                raise
+            _invalidate_query_id(operation_name)
+            refreshed_query_id = _resolve_query_id(operation_name, prefer_fallback=False, url_fetch_fn=_url_fetch)
+            if refreshed_query_id == query_id:
+                raise _stale_query_id_error(operation_name, exc) from exc
+            logger.info("Retrying %s with live queryId after stale-query response", operation_name)
+            retry_url = _build_graphql_url(refreshed_query_id, operation_name, variables, features, field_toggles)
+            try:
+                return self._api_get(retry_url)
+            except TwitterAPIError as retry_exc:
+                if _is_stale_query_error(retry_exc):
+                    raise _stale_query_id_error(operation_name, retry_exc) from retry_exc
+                raise
 
     def _graphql_post(self, operation_name, variables, features=None):
         # type: (str, Dict[str, Any], Optional[Dict[str, Any]]) -> Dict[str, Any]
@@ -1152,13 +1168,19 @@ class TwitterClient:
         try:
             return _do_post(query_id)
         except TwitterAPIError as exc:
-            if _is_stale_query_error(exc):
-                _invalidate_query_id(operation_name)
-                refreshed = _resolve_query_id(operation_name, prefer_fallback=False, url_fetch_fn=_url_fetch)
-                if refreshed != query_id:
-                    logger.info("Retrying POST %s with live queryId after stale-query response", operation_name)
-                    return _do_post(refreshed)
-            raise
+            if not _is_stale_query_error(exc):
+                raise
+            _invalidate_query_id(operation_name)
+            refreshed = _resolve_query_id(operation_name, prefer_fallback=False, url_fetch_fn=_url_fetch)
+            if refreshed == query_id:
+                raise _stale_query_id_error(operation_name, exc) from exc
+            logger.info("Retrying POST %s with live queryId after stale-query response", operation_name)
+            try:
+                return _do_post(refreshed)
+            except TwitterAPIError as retry_exc:
+                if _is_stale_query_error(retry_exc):
+                    raise _stale_query_id_error(operation_name, retry_exc) from retry_exc
+                raise
 
     # ── Internal: HTTP request engine ────────────────────────────────
 

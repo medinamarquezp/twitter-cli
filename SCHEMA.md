@@ -24,7 +24,7 @@ Failure (exit code 1):
 | `rate_limited` | HTTP 429 after the built-in retries |
 | `not_found` | User or tweet not found |
 | `network_error` | Network failure |
-| `query_id_error` | No GraphQL query ID could be resolved; try `refresh-query-ids` |
+| `query_id_error` | No GraphQL query ID could be resolved, or X rejected it and no working one was found; try `refresh-query-ids` |
 | `media_upload_error` | Image upload failed |
 | `invalid_input` | Invalid argument |
 | `api_error` | Any other X error |
