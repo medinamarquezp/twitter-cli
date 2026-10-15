@@ -51,7 +51,7 @@ uv tool install git+https://github.com/medinamarquezp/twitter-cli@v0.8.6-fork.8
 | `0.8.6+fork.3` | `lists [SCREEN_NAME]`: lists a user owns, through the 1.1 `lists/ownerships.json` endpoint. `CombinedLists`, `ListsManagementPageTimeline` and `ListOwnerships` answer `DecodeException` for an account that owns a list, even with the web's feature flags |
 | `0.8.6+fork.3` | Handles, tweet IDs and list IDs are validated before they are used, so arguments cannot inject search operators |
 | `0.8.6+fork.3` | A Bottom cursor nested inside a timeline item is now followed |
-| `0.8.6+fork.4` | Native scheduling: `schedule TEXT --at TIME [-i IMAGE]` (`CreateScheduledTweet`; X publishes the post even when this machine is off), `scheduled` (`FetchScheduledTweets`) and `unschedule ID` (`DeleteScheduledTweet`). `--at` takes ISO 8601, local time without an offset, at least five minutes ahead. `scheduled` is verified against X; `schedule` and `unschedule` are covered by tests but not yet exercised against a live account |
+| `0.8.6+fork.4` | Native scheduling: `schedule TEXT --at TIME [-i IMAGE]` (`CreateScheduledTweet`; X publishes the post even when this machine is off), `scheduled` (`FetchScheduledTweets`) and `unschedule ID` (`DeleteScheduledTweet`). `--at` takes ISO 8601, local time without an offset, at least five minutes ahead. Checked against a live account on 2026-10-13: X accepted a scheduled 1,167-character post, `scheduled` returned it whole and `unschedule` cancelled it; a second long post went out at its scheduled time, unchanged |
 | `0.8.6+fork.5` | `refresh-query-ids [--quick]`: scans the logged-in x.com web build (`main.js`, `vendor.js` and about 540 on-demand chunks, about 25 seconds) and saves every operation found to `~/.twitter-cli/web_query_ids.json`; `--quick` stops once the fork's operations are found. These IDs are used only for operations without a built-in ID or after an ID is rejected, so working IDs are never replaced, and a rejected ID is never handed back |
 | `0.8.6+fork.5` | The automatic bundle scan reads the cached logged-in page (`main.js` and `vendor.js`) instead of the logged-out shell, which links no operation, and keeps its findings apart from the main cache |
 | `0.8.6+fork.6` | Stable structured output: [`schema/twitter-cli.schema.json`](schema/twitter-cli.schema.json) (JSON Schema 2020-12) and [`SCHEMA.md`](SCHEMA.md) describe every command's envelope, checked by contract tests that also validate tweets parsed from recorded X responses |
@@ -65,7 +65,7 @@ Live web IDs also explained the list `DecodeException`: the twitter-openapi IDs 
 
 ## Planned fork work
 
-- Nothing scheduled. `schedule`, `unschedule` and long posts still need a check against a live account.
+- Nothing scheduled. Posting a long text right away with `post`, which goes through `CreateNoteTweet`, still needs a check against a live account.
 
 ## Testing
 
