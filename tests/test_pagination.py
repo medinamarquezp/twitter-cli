@@ -104,7 +104,7 @@ def test_user_tweets_can_read_the_replies_tab() -> None:
         client.fetch_user_tweets("42", 5, with_replies=True)
         client.fetch_user_tweets("42", 5)
 
-    assert operations[0][0] == "UserTweetsAndReplies"
+    assert operations[0][0] == "UserRepliesTimeline"
     assert operations[0][1]["withCommunity"] is True
     assert operations[1][0] == "UserTweets"
 

@@ -421,7 +421,7 @@ class TwitterClient:
         else:
             extra_variables["withQuickPromoteEligibilityTweetFields"] = True
         return self._fetch_timeline(
-            "UserTweetsAndReplies" if with_replies else "UserTweets",
+            "UserRepliesTimeline" if with_replies else "UserTweets",
             count,
             lambda data: (
                 _deep_get(data, "data", "user", "result", "timeline", "timeline", "instructions")
